@@ -1,12 +1,25 @@
 import {
-  Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Funnel, FunnelChart, Legend,
-  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Funnel,
+  FunnelChart,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
 } from 'recharts'
-import { ArrowRight, CalendarClock, FileCheck2, ShieldAlert, Sparkles } from 'lucide-react'
+import { ArrowRight, CalendarClock } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StatCard from '../components/StatCard'
 import { dashboardStats, inboxFeed, studentJourney, students, workloadByStage } from '../data/mockData'
-import { Link } from 'react-router-dom'
 
 const palette = ['#5B7CFA', '#18B7A6', '#8E7CFF', '#FFB84D', '#F06595']
 
@@ -15,25 +28,7 @@ export default function DashboardPage() {
 
   return (
     <div className="page-wrap">
-      <SectionHeader
-        eyebrow="Reimagined dashboard"
-        title="A student-first command center"
-        subtitle="See health, bottlenecks, and the next best action without opening a single file."
-        actions={<button className="primary-button">Create intake batch</button>}
-      />
-
-      <section className="hero-banner">
-        <div>
-          <p className="eyebrow">Today’s signal</p>
-          <h2>146 transcripts landed, but only 14 need intervention.</h2>
-          <p>Most work is flowing normally. The main risk is a small cluster of authenticity exceptions and two students awaiting follow-up documents.</p>
-        </div>
-        <div className="hero-stats">
-          <span><Sparkles size={16} /> Auto-grouping success 93%</span>
-          <span><FileCheck2 size={16} /> Ready for review 78%</span>
-          <span><ShieldAlert size={16} /> Trust exceptions 14</span>
-        </div>
-      </section>
+      <SectionHeader title="Command Center" />
 
       <section className="stats-grid">
         {dashboardStats.map((item) => <StatCard key={item.label} {...item} />)}
@@ -85,7 +80,7 @@ export default function DashboardPage() {
           <div className="panel-header">
             <div>
               <h3>Student spotlight</h3>
-              <p>A 360° record that rolls every transcript into one story.</p>
+              <p>A 360 degree record that rolls every transcript into one story.</p>
             </div>
             <Link to={`/students/${spotlight.id}`} className="text-link">Open full profile <ArrowRight size={16} /></Link>
           </div>
@@ -165,12 +160,14 @@ export default function DashboardPage() {
           </div>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[
-                { program: 'Nursing', files: 61 },
-                { program: 'Computer Science', files: 48 },
-                { program: 'Business', files: 37 },
-                { program: 'Biology', files: 29 },
-              ]}>
+              <BarChart
+                data={[
+                  { program: 'Nursing', files: 61 },
+                  { program: 'Computer Science', files: 48 },
+                  { program: 'Business', files: 37 },
+                  { program: 'Biology', files: 29 },
+                ]}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="program" />
                 <YAxis />

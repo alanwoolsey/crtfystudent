@@ -16,33 +16,11 @@ const navItems = [
 export default function App() {
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <header className="topbar">
         <div className="brand-mark">
-          <div className="brand-glyph">N</div>
-          <div>
-            <strong>Nexa StudentFlow</strong>
-            <p>student-first transcript ops</p>
-          </div>
+          <img className="brand-logo" src="/crtfystudent.png" alt="crtfy student" />
         </div>
-
-        <nav className="nav-list">
-          {navItems.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
-              <Icon size={18} />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-
-        <div className="sidebar-card">
-          <p className="eyebrow">Design direction</p>
-          <h4>From documents to student journeys</h4>
-          <p>Every screen starts with what the team needs to know about a student, not a file.</p>
-        </div>
-      </aside>
-
-      <main className="main-panel">
-        <header className="topbar">
+        <div className="topbar-main">
           <div className="search-wrap">
             <Search size={18} />
             <input placeholder="Search student, transcript, institution, program, or workflow step" />
@@ -57,8 +35,21 @@ export default function App() {
               </div>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
+      <aside className="sidebar">
+        <nav className="nav-list">
+          {navItems.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+              <Icon size={18} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+
+      <main className="main-panel">
         <Routes>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/students" element={<StudentsPage />} />

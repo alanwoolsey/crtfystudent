@@ -1,4 +1,4 @@
-# Nexa StudentFlow Prototype
+# crtfy student Prototype
 
 A React + Vite prototype that reimagines transcript operations around the student rather than the document.
 
@@ -14,7 +14,7 @@ The prototype introduces a student-centered experience with:
 
 ## Suggested product direction
 
-- New product name: **Nexa StudentFlow**
+- New product name: **crtfy student**
 - Design language: deep navy foundation with electric indigo, teal, violet, amber, and rose accents
 - IA principle: start from the student, drill into transcripts as supporting evidence
 

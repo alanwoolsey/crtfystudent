@@ -28,35 +28,61 @@ button { cursor: pointer; }
 .app-shell {
   display: grid;
   grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "topbar topbar"
+    "sidebar main";
   min-height: 100vh;
 }
 
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 22px;
+  background: rgba(255,255,255,0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+}
+
 .sidebar {
-  padding: 28px 18px;
+  grid-area: sidebar;
+  padding: 24px 18px;
   background: radial-gradient(circle at top left, #14213d, #0d1530 70%);
   color: #eef4ff;
   display: flex;
   flex-direction: column;
   gap: 28px;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: 72px;
+  align-self: start;
+  height: calc(100vh - 72px);
+  overflow: auto;
 }
 
 .brand-mark {
   display: flex;
-  gap: 12px;
   align-items: center;
 }
-.brand-glyph {
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--teal), var(--indigo));
-  box-shadow: var(--shadow);
+.brand-logo {
+  display: block;
+  width: 172px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
 }
 .brand-mark p,
 .section-subtitle,
@@ -100,13 +126,9 @@ button { cursor: pointer; }
   font-weight: 700;
 }
 
-.main-panel { padding: 22px 26px 36px; }
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  align-items: center;
-  margin-bottom: 22px;
+.main-panel {
+  grid-area: main;
+  padding: 22px 26px 36px;
 }
 .search-wrap {
   flex: 1;
@@ -358,8 +380,26 @@ button { cursor: pointer; }
 }
 
 @media (max-width: 900px) {
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; }
-  .topbar, .section-header, .toolbar-row, .table-toolbar { flex-direction: column; align-items: stretch; }
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "sidebar"
+      "main";
+  }
+  .topbar,
+  .topbar-main,
+  .section-header,
+  .toolbar-row,
+  .table-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .sidebar {
+    position: static;
+    top: auto;
+    height: auto;
+    overflow: visible;
+  }
   .stats-grid { grid-template-columns: 1fr; }
 }
