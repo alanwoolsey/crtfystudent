@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useMemo, useState } from 'react
 import { students as seedStudents } from '../data/mockData'
 
 const StudentRecordsContext = createContext(null)
+const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+const transcriptParseUrl = `${apiBaseUrl}/api/v1/transcripts/parse`
 
 function slugify(value) {
   return value
@@ -124,7 +126,7 @@ export function StudentRecordsProvider({ children }) {
     formData.append('document_type', 'auto')
     formData.append('use_bedrock', 'true')
 
-    const response = await fetch('http://127.0.0.1:8000/api/v1/transcripts/parse', {
+    const response = await fetch(transcriptParseUrl, {
       method: 'POST',
       body: formData,
     })

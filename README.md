@@ -25,6 +25,20 @@ npm install
 npm run dev
 ```
 
+## Environment
+
+Create a local `.env` with:
+
+```bash
+VITE_API_URL=http://127.0.0.1:8000
+```
+
+For AWS Amplify, set the environment variable named `VITE_API_URL` to your deployed backend base URL, for example:
+
+```bash
+VITE_API_URL=https://api.example.com
+```
+
 ## Build
 
 ```bash
