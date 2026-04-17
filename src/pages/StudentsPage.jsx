@@ -1,8 +1,10 @@
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
-import { students } from '../data/mockData'
+import { useStudentRecords } from '../context/StudentRecordsContext'
 
 export default function StudentsPage() {
+  const { students } = useStudentRecords()
+
   return (
     <div className="page-wrap">
       <SectionHeader

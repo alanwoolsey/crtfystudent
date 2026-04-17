@@ -1,14 +1,19 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, CheckCircle2, CircleDot, Mail, MapPin, Phone } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CircleDot, Mail, MapPin, Phone, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import TranscriptTimeline from '../components/TranscriptTimeline'
-import { students } from '../data/mockData'
+import { useStudentRecords } from '../context/StudentRecordsContext'
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const student = useMemo(() => students.find((item) => item.id === studentId) || students[0], [studentId])
+  const { students } = useStudentRecords()
+  const [selectedTranscript, setSelectedTranscript] = useState(null)
+  const student = useMemo(
+    () => students.find((item) => item.id === studentId) || students[0],
+    [studentId, students],
+  )
 
   return (
     <div className="page-wrap">
@@ -49,7 +54,7 @@ export default function StudentProfilePage() {
           <div className="panel-header">
             <div>
               <h3>Next best actions</h3>
-              <p>A compact task list aligned to the student’s current stage.</p>
+              <p>A compact task list aligned to the student's current stage.</p>
             </div>
           </div>
           <div className="checklist">
@@ -71,7 +76,7 @@ export default function StudentProfilePage() {
               <p>Every upload, grouped chronologically by the student record.</p>
             </div>
           </div>
-          <TranscriptTimeline transcripts={student.transcripts} />
+          <TranscriptTimeline transcripts={student.transcripts} onTranscriptSelect={setSelectedTranscript} />
         </article>
 
         <article className="panel">
@@ -105,6 +110,58 @@ export default function StudentProfilePage() {
           </div>
         </article>
       </section>
+
+      {selectedTranscript ? (
+        <div className="modal-scrim" onClick={() => setSelectedTranscript(null)} role="presentation">
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>{selectedTranscript.institution || selectedTranscript.source}</h3>
+                <p>{selectedTranscript.type} · {selectedTranscript.courses?.length || 0} courses</p>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => setSelectedTranscript(null)}
+                aria-label="Close transcript details"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="course-modal-body">
+              {selectedTranscript.courses?.length ? (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Course</th>
+                        <th>Title</th>
+                        <th>Term</th>
+                        <th>Credits</th>
+                        <th>Grade</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedTranscript.courses.map((course) => (
+                        <tr key={`${selectedTranscript.id}-${course.courseId}-${course.term}-${course.year}`}>
+                          <td><strong>{course.courseId || course.subject}</strong></td>
+                          <td>{course.courseTitle}</td>
+                          <td>{[course.term, course.year].filter(Boolean).join(' ') || '-'}</td>
+                          <td>{course.credit || course.creditAttempted || '-'}</td>
+                          <td>{course.grade || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="muted-copy">No parsed course detail is available for this transcript.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

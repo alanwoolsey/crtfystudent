@@ -19,11 +19,13 @@ import { ArrowRight, CalendarClock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StatCard from '../components/StatCard'
-import { dashboardStats, inboxFeed, studentJourney, students, workloadByStage } from '../data/mockData'
+import { dashboardStats, inboxFeed, studentJourney, workloadByStage } from '../data/mockData'
+import { useStudentRecords } from '../context/StudentRecordsContext'
 
 const palette = ['#5B7CFA', '#18B7A6', '#8E7CFF', '#FFB84D', '#F06595']
 
 export default function DashboardPage() {
+  const { students } = useStudentRecords()
   const spotlight = students[0]
 
   return (
