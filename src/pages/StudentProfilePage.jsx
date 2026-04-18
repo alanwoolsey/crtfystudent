@@ -10,10 +10,7 @@ export default function StudentProfilePage() {
   const { studentId } = useParams()
   const { students } = useStudentRecords()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
-  const student = useMemo(
-    () => students.find((item) => item.id === studentId) || students[0],
-    [studentId, students],
-  )
+  const student = useMemo(() => students.find((item) => item.id === studentId) || students[0], [studentId, students])
 
   return (
     <div className="page-wrap">
@@ -22,7 +19,7 @@ export default function StudentProfilePage() {
         eyebrow="Student 360"
         title={student.name}
         subtitle={`${student.program} · Goal: ${student.institutionGoal}`}
-        actions={<button className="primary-button">Share status update</button>}
+        actions={<button className="primary-button">Release outcome</button>}
       />
 
       <section className="dashboard-grid profile-grid">
@@ -43,9 +40,9 @@ export default function StudentProfilePage() {
           </div>
 
           <div className="metric-cluster profile-metrics">
-            <div><span>Cumulative GPA</span><strong>{student.gpa}</strong></div>
+            <div><span>Fit score</span><strong>{student.fitScore}%</strong></div>
+            <div><span>Deposit likelihood</span><strong>{student.depositLikelihood}%</strong></div>
             <div><span>Accepted credits</span><strong>{student.creditsAccepted}</strong></div>
-            <div><span>Transcript history</span><strong>{student.transcriptsCount} uploads</strong></div>
             <div><span>Advisor</span><strong>{student.advisor}</strong></div>
           </div>
         </article>
@@ -54,7 +51,7 @@ export default function StudentProfilePage() {
           <div className="panel-header">
             <div>
               <h3>Next best actions</h3>
-              <p>A compact task list aligned to the student's current stage.</p>
+              <p>Clear human-readable guidance tied to the outcome engine.</p>
             </div>
           </div>
           <div className="checklist">
@@ -65,6 +62,12 @@ export default function StudentProfilePage() {
               </div>
             ))}
           </div>
+          <div className="callout-card">
+            <h4>Outcome recommendation</h4>
+            <p><strong>{student.recommendation?.summary}</strong></p>
+            <p>{student.recommendation?.fitNarrative}</p>
+            <p><strong>Next:</strong> {student.recommendation?.nextBestAction}</p>
+          </div>
         </article>
       </section>
 
@@ -73,7 +76,7 @@ export default function StudentProfilePage() {
           <div className="panel-header">
             <div>
               <h3>Transcript lineage</h3>
-              <p>Every upload, grouped chronologically by the student record.</p>
+              <p>One record, all document history, with evidence ready for review.</p>
             </div>
           </div>
           <TranscriptTimeline transcripts={student.transcripts} onTranscriptSelect={setSelectedTranscript} />
@@ -83,7 +86,7 @@ export default function StudentProfilePage() {
           <div className="panel-header">
             <div>
               <h3>Academic signal</h3>
-              <p>Trend terms, not just one extracted GPA.</p>
+              <p>Show trajectory, not just one extracted GPA.</p>
             </div>
           </div>
           <div className="chart-box lg">
@@ -119,12 +122,7 @@ export default function StudentProfilePage() {
                 <h3>{selectedTranscript.institution || selectedTranscript.source}</h3>
                 <p>{selectedTranscript.type} · {selectedTranscript.courses?.length || 0} courses</p>
               </div>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => setSelectedTranscript(null)}
-                aria-label="Close transcript details"
-              >
+              <button type="button" className="icon-button" onClick={() => setSelectedTranscript(null)} aria-label="Close transcript details">
                 <X size={18} />
               </button>
             </div>

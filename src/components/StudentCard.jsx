@@ -1,36 +1,35 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, MapPin } from 'lucide-react'
+import { ArrowUpRight, ShieldCheck, Sparkles } from 'lucide-react'
 
 export default function StudentCard({ student }) {
   return (
-    <article className="student-card">
+    <Link to={`/students/${student.id}`} className="student-card">
       <div className="student-card-top">
         <div>
-          <div className="student-card-title">
-            <h3>{student.name}</h3>
-            <span className={`badge risk-${student.risk?.toLowerCase() || 'low'}`}>{student.stage}</span>
-          </div>
-          <p>{student.program} · Goal: {student.institutionGoal}</p>
+          <h3>{student.name}</h3>
+          <p>{student.program} · {student.institutionGoal}</p>
         </div>
-        <div className="score-pill">{student.transcriptsCount} transcripts</div>
+        <ArrowUpRight size={18} />
       </div>
 
-      <p className="muted-copy">{student.summary}</p>
-
-      <div className="student-meta-grid">
-        <span><MapPin size={14} /> {student.city}</span>
-        <span>GPA {student.gpa}</span>
-        <span>{student.creditsAccepted} credits accepted</span>
-        <span>Updated {student.lastActivity}</span>
+      <div className="pill-row compact">
+        <span className={`badge risk-${student.risk.toLowerCase()}`}>{student.stage}</span>
+        <span className="tag">{student.fitScore}% fit</span>
+        <span className="tag">{student.depositLikelihood}% deposit</span>
       </div>
 
-      <div className="tag-row">
-        {student.tags?.map((tag) => <span key={tag} className="tag">{tag}</span>)}
+      <p className="student-summary">{student.summary}</p>
+
+      <div className="metric-cluster">
+        <div><span>GPA</span><strong>{student.gpa}</strong></div>
+        <div><span>Credits</span><strong>{student.creditsAccepted}</strong></div>
+        <div><span>Uploads</span><strong>{student.transcriptsCount}</strong></div>
       </div>
 
-      <Link to={`/students/${student.id}`} className="text-link">
-        Open student 360 <ArrowRight size={16} />
-      </Link>
-    </article>
+      <div className="card-footer-row">
+        <span><Sparkles size={14} /> Next: {student.recommendation?.nextBestAction || 'Review'}</span>
+        <span><ShieldCheck size={14} /> {student.risk} risk</span>
+      </div>
+    </Link>
   )
 }

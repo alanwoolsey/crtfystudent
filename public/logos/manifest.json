@@ -1,0 +1,15 @@
+{
+  "brand": [
+    { "name": "crtfy", "file": "/logos/crtfy.svg" },
+    { "name": "crtfy student", "file": "/logos/crtfy-student.svg" }
+  ],
+  "offerings": [
+    { "name": "Command Center", "file": "/logos/crtfy-command-center.svg" },
+    { "name": "Prospect Portal", "file": "/logos/crtfy-prospect-portal.svg" },
+    { "name": "Student 360", "file": "/logos/crtfy-student-360.svg" },
+    { "name": "Decision Studio", "file": "/logos/crtfy-decision-studio.svg" },
+    { "name": "Workflows", "file": "/logos/crtfy-workflows.svg" },
+    { "name": "Trust Center", "file": "/logos/crtfy-trust-center.svg" },
+    { "name": "Crtfy Integrations", "file": "/logos/crtfy-integrations.svg" }
+  ]
+}

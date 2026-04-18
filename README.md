@@ -44,3 +44,14 @@ VITE_API_URL=https://api.example.com
 ```bash
 npm run build
 ```
+
+
+## Prototype positioning
+
+This prototype is designed around a strategy for beating traditional higher-ed CRMs by competing above them:
+
+- Pre-application transcript intelligence
+- Explainable decision packets
+- Trust-first document review
+- Certified connectors into SIS/CRM systems
+- Outcome agents tied to KPIs

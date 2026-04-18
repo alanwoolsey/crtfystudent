@@ -1,24 +1,23 @@
 import SectionHeader from '../components/SectionHeader'
 import { queueItems } from '../data/mockData'
 
-export default function QueuePage({ trustView = false }) {
-  const title = trustView ? 'Trust and authenticity workspace' : 'Workflow and exceptions'
-  const subtitle = trustView
-    ? 'A focused surface for fraud signals, institution mismatches, and synthetic-document review.'
-    : 'Manage work by exception, age, and owner while keeping student context visible.'
-
+export default function QueuePage() {
   return (
     <div className="page-wrap">
-      <SectionHeader eyebrow={trustView ? 'Trust desk' : 'Operations queue'} title={title} subtitle={subtitle} />
+      <SectionHeader
+        eyebrow="Work by exception"
+        title="Operational workflows"
+        subtitle="Queue design should make it obvious what humans must handle versus what agents and connectors can resolve automatically."
+      />
 
       <section className="panel">
         <div className="table-toolbar">
-          <input className="filter-input" placeholder="Search student, institution, owner, reason" />
+          <input className="filter-input" placeholder="Search student, institution, owner, or reason" />
           <div className="pill-row">
-            <span className="tag active-tag">All</span>
+            <span className="tag active-tag">All work</span>
             <span className="tag">High priority</span>
-            <span className="tag">Aging &gt; 24h</span>
-            <span className="tag">My work</span>
+            <span className="tag">Connector ready</span>
+            <span className="tag">Needs staff</span>
           </div>
         </div>
 

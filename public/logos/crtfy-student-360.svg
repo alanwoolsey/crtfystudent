@@ -1,0 +1,13 @@
+<svg width="1100" height="360" viewBox="0 0 1100 360" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="student360-cyan" x1="26" y1="44" x2="364" y2="320" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4BE7DB"/>
+      <stop offset="1" stop-color="#16B6DF"/>
+    </linearGradient>
+  </defs>
+  <path d="M282 52C229 21 164 16 104 40C27 71 -15 155 8 236C27 306 88 354 160 354C205 354 248 335 280 301" stroke="url(#student360-cyan)" stroke-width="38" stroke-linecap="round"/>
+  <circle cx="180" cy="144" r="28" fill="url(#student360-cyan)"/>
+  <path d="M112 184L170 242L296 116" stroke="#0E2B78" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="416" y="208" fill="#0E2B78" font-family="Inter, Arial, sans-serif" font-size="186" font-weight="500">crtfy</text>
+  <text x="422" y="298" fill="url(#student360-cyan)" font-family="Inter, Arial, sans-serif" font-size="82" font-weight="500" letter-spacing="10">student 360</text>
+</svg>

@@ -1,11 +1,9 @@
-export default function StatCard({ label, value, delta, tone = 'indigo' }) {
+export default function StatCard({ stat }) {
   return (
-    <article className={`stat-card tone-${tone}`}>
-      <span className="stat-label">{label}</span>
-      <div className="stat-row">
-        <h3>{value}</h3>
-        <span className="stat-delta">{delta}</span>
-      </div>
+    <article className={`stat-card tone-${stat.tone || 'indigo'}`}>
+      <span>{stat.label}</span>
+      <strong>{stat.value}</strong>
+      <p>{stat.delta}</p>
     </article>
   )
 }

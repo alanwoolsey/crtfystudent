@@ -8,18 +8,18 @@ export default function StudentsPage() {
   return (
     <div className="page-wrap">
       <SectionHeader
-        eyebrow="Student records"
-        title="One canonical student record for every transcript"
-        subtitle="Browse students, not files. Each profile aggregates all uploads, workflow events, and outreach."
+        eyebrow="Canonical student record"
+        title="Student 360"
+        subtitle="Every upload, fit score, trust signal, and next-best action belongs to one student record — not a loose pile of files."
       />
 
       <div className="toolbar-row">
-        <input className="filter-input" placeholder="Filter by name, program, advisor, institution, risk" />
+        <input className="filter-input" placeholder="Filter by name, program, advisor, institution, risk, or fit" />
         <div className="pill-row">
           <span className="tag active-tag">All students</span>
-          <span className="tag">Needs review</span>
-          <span className="tag">Awaiting student</span>
-          <span className="tag">Quarantined history</span>
+          <span className="tag">High fit</span>
+          <span className="tag">Trust hold</span>
+          <span className="tag">Need evidence</span>
         </div>
       </div>
 

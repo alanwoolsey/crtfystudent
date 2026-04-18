@@ -1,123 +1,60 @@
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Funnel,
-  FunnelChart,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
-import { ArrowRight, CalendarClock } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import SectionHeader from '../components/SectionHeader'
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, FunnelChart, Funnel, LabelList, PieChart, Pie, Cell } from 'recharts'
 import StatCard from '../components/StatCard'
-import { dashboardStats, inboxFeed, studentJourney, workloadByStage } from '../data/mockData'
-import { useStudentRecords } from '../context/StudentRecordsContext'
+import { dashboardStats, inboxFeed, journeyFunnel, outcomeAgents, workloadByStage } from '../data/mockData'
 
-const palette = ['#5B7CFA', '#18B7A6', '#8E7CFF', '#FFB84D', '#F06595']
+const colors = ['#5b7cfa', '#18b7a6', '#8e7cff', '#ff8b8b']
 
 export default function DashboardPage() {
-  const { students } = useStudentRecords()
-  const spotlight = students[0]
-
   return (
     <div className="page-wrap">
-      <SectionHeader title="Command Center" />
-
       <section className="stats-grid">
-        {dashboardStats.map((item) => <StatCard key={item.label} {...item} />)}
+        {dashboardStats.map((stat) => <StatCard key={stat.label} stat={stat} />)}
       </section>
 
-      <section className="dashboard-grid two-up">
-        <article className="panel">
+      <section className="main-layout">
+        <article className="panel chart-panel tall">
           <div className="panel-header">
             <div>
-              <h3>Student journey funnel</h3>
-              <p>Spot where students fall out of the transcript-to-decision flow.</p>
+              <h3>Outcome funnel</h3>
+              <p>Measure the movement from prospect to deposit, not just contact activity.</p>
             </div>
           </div>
           <div className="chart-box lg">
             <ResponsiveContainer width="100%" height="100%">
-              <FunnelChart>
+              <AreaChart data={journeyFunnel}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="step" />
+                <YAxis />
                 <Tooltip />
-                <Funnel dataKey="count" data={studentJourney} isAnimationActive>
-                  {studentJourney.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}
-                </Funnel>
-              </FunnelChart>
+                <Area type="monotone" dataKey="count" stroke="#5b7cfa" fill="#5b7cfa22" />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </article>
 
-        <article className="panel">
+        <article className="panel chart-panel tall">
           <div className="panel-header">
             <div>
-              <h3>Work by stage</h3>
-              <p>Operational load across the transcript lifecycle.</p>
+              <h3>Routing mix</h3>
+              <p>Keep humans focused on exceptions while certified outcomes flow through automatically.</p>
             </div>
           </div>
-          <div className="chart-box lg">
+          <div className="chart-box md">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={workloadByStage} innerRadius={70} outerRadius={100} paddingAngle={3} dataKey="value">
-                  {workloadByStage.map((_, index) => <Cell key={index} fill={palette[index % palette.length]} />)}
+                <Pie data={workloadByStage} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={4}>
+                  {workloadByStage.map((entry, index) => <Cell key={entry.name} fill={colors[index % colors.length]} />)}
                 </Pie>
                 <Tooltip />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </article>
-      </section>
-
-      <section className="dashboard-grid main-layout">
-        <article className="panel spotlight-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Student spotlight</h3>
-              <p>A 360 degree record that rolls every transcript into one story.</p>
-            </div>
-            <Link to={`/students/${spotlight.id}`} className="text-link">Open full profile <ArrowRight size={16} /></Link>
-          </div>
-          <div className="spotlight-grid">
-            <div>
-              <h2>{spotlight.name}</h2>
-              <p>{spotlight.program}</p>
-              <p className="muted-copy">{spotlight.summary}</p>
-              <div className="tag-row">
-                {spotlight.tags.map((tag) => <span key={tag} className="tag">{tag}</span>)}
-              </div>
-            </div>
-            <div className="metric-cluster">
-              <div><span>Stage</span><strong>{spotlight.stage}</strong></div>
-              <div><span>Credits accepted</span><strong>{spotlight.creditsAccepted}</strong></div>
-              <div><span>Transcript history</span><strong>{spotlight.transcriptsCount} files</strong></div>
-              <div><span>Advisor</span><strong>{spotlight.advisor}</strong></div>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel side-feed">
-          <div className="panel-header">
-            <div>
-              <h3>What changed</h3>
-              <p>Activity feed for operators and advisors.</p>
-            </div>
-          </div>
-          <div className="feed-list">
-            {inboxFeed.map((item) => (
-              <div key={item.title} className="feed-item">
-                <div className="feed-chip">{item.category}</div>
-                <h4>{item.title}</h4>
-                <p>{item.detail}</p>
-                <span>{item.when}</span>
+          <div className="legend-list">
+            {workloadByStage.map((item, index) => (
+              <div key={item.name} className="legend-row">
+                <span className="legend-dot" style={{ background: colors[index % colors.length] }} />
+                <span>{item.name}</span>
+                <strong>{item.value}%</strong>
               </div>
             ))}
           </div>
@@ -128,55 +65,44 @@ export default function DashboardPage() {
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Throughput this week</h3>
-              <p>Uploads compared with completed reviews.</p>
+              <h3>Outcome agents</h3>
+              <p>Each agent owns a KPI and hands staff a clean, explainable package.</p>
             </div>
-            <div className="mini-kpi"><CalendarClock size={16} /> Weekly cadence</div>
           </div>
-          <div className="chart-box">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={spotlight.workflow}>
-                <defs>
-                  <linearGradient id="colorUploaded" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#5B7CFA" stopOpacity={0.5} />
-                    <stop offset="95%" stopColor="#5B7CFA" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Area type="monotone" dataKey="uploaded" stroke="#5B7CFA" fill="url(#colorUploaded)" />
-                <Area type="monotone" dataKey="reviewed" stroke="#18B7A6" fillOpacity={0} />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div className="feed-list">
+            {outcomeAgents.map((agent) => (
+              <div key={agent.name} className="feed-item agent-item">
+                <div>
+                  <strong>{agent.name}</strong>
+                  <p>{agent.objective}</p>
+                  <small>{agent.summary}</small>
+                </div>
+                <span className="badge neutral-badge">{agent.metric}</span>
+              </div>
+            ))}
           </div>
         </article>
 
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Top programs by transcript demand</h3>
-              <p>Useful for staffing and advising alignment.</p>
+              <h3>Live activity</h3>
+              <p>Operational events with outcome context attached.</p>
             </div>
           </div>
-          <div className="chart-box">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={[
-                  { program: 'Nursing', files: 61 },
-                  { program: 'Computer Science', files: 48 },
-                  { program: 'Business', files: 37 },
-                  { program: 'Biology', files: 29 },
-                ]}
-              >
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="program" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="files" fill="#8E7CFF" radius={[10, 10, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="feed-list">
+            {inboxFeed.map((item) => (
+              <div key={item.title} className="feed-item">
+                <div>
+                  <div className="feed-top">
+                    <strong>{item.title}</strong>
+                    <span className="tag">{item.category}</span>
+                  </div>
+                  <p>{item.detail}</p>
+                </div>
+                <span className="table-sub">{item.when}</span>
+              </div>
+            ))}
           </div>
         </article>
       </section>
