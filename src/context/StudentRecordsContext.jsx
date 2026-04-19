@@ -56,6 +56,53 @@ function buildTranscriptSteps(audit = []) {
   }))
 }
 
+function getBatchItemLabel(item) {
+  return item?.filename || item?.fileName || item?.name || item?.source || item?.originalFilename || item?.transcriptId || item?.id || 'Extracted file'
+}
+
+function inferBatchItemStatus(item) {
+  if (item?.error) return 'failed'
+  if (item?.completed === true) return 'completed'
+  if (item?.status) return item.status
+  return 'processing'
+}
+
+function normalizeBatchItems(items = []) {
+  return items.map((item, index) => ({
+    id: item?.id || item?.transcriptId || `${getBatchItemLabel(item)}-${index}`,
+    filename: getBatchItemLabel(item),
+    transcriptId: item?.transcriptId || null,
+    documentUploadId: item?.documentUploadId || null,
+    parseRunId: item?.parseRunId || null,
+    status: inferBatchItemStatus(item),
+    completed: Boolean(item?.completed),
+    error: item?.error || '',
+    startedAt: item?.startedAt || null,
+    completedAt: item?.completedAt || null,
+  }))
+}
+
+function buildBatchProgress(payload) {
+  return {
+    status: payload?.status || 'processing',
+    totalFiles: Number(payload?.totalFiles) || 0,
+    completedFiles: Number(payload?.completedFiles) || 0,
+    failedFiles: Number(payload?.failedFiles) || 0,
+    activeFiles: Number(payload?.activeFiles) || 0,
+  }
+}
+
+function resolveStudentId(parsed) {
+  return parsed?.demographic?.studentId || parsed?.studentId || parsed?.student?.id || null
+}
+
+function validateParsedTranscript(parsed) {
+  const studentId = resolveStudentId(parsed)
+  if (!studentId) return 'No student could be resolved from this transcript.'
+  if (!Array.isArray(parsed?.courses) || parsed.courses.length === 0) return 'No extracted courses were found for this transcript.'
+  return ''
+}
+
 function mapParsedTranscript(parsed, file) {
   const demographic = parsed.demographic || {}
   const courses = parsed.courses || []
@@ -63,7 +110,7 @@ function mapParsedTranscript(parsed, file) {
   const institutionName = demographic.institutionName || courses[0]?.institution || 'Unknown institution'
   const firstName = demographic.firstName || 'Unknown'
   const lastName = demographic.lastName || 'Student'
-  const studentId = demographic.studentId || parsed.documentId
+  const studentId = resolveStudentId(parsed)
   const cumulativeGpa = formatNumber(parsed.grandGPA?.cumulativeGPA || demographic.cumulativeGpa)
   const creditsEarned = formatNumber(parsed.grandGPA?.unitsEarned || demographic.totalCreditsEarned, 0)
   const typeLabel = metadata.document_type?.replaceAll('_', ' ') || 'transcript'
@@ -135,6 +182,26 @@ function mapParsedTranscript(parsed, file) {
   }
 }
 
+function mergeStudentRecord(currentStudents, mapped) {
+  const existing = currentStudents.find((student) => student.id === mapped.studentId)
+  if (!existing) return [mapped.studentPatch, ...currentStudents]
+
+  const mergedTranscripts = [mapped.transcript, ...(existing.transcripts || [])]
+  return currentStudents.map((student) => student.id !== mapped.studentId ? student : {
+    ...student,
+    ...mapped.studentPatch,
+    email: student.email || mapped.studentPatch.email,
+    phone: student.phone || mapped.studentPatch.phone,
+    advisor: student.advisor || mapped.studentPatch.advisor,
+    program: student.program || mapped.studentPatch.program,
+    city: student.city || mapped.studentPatch.city,
+    tags: Array.from(new Set([...(mapped.studentPatch.tags || []), ...(student.tags || [])])),
+    transcripts: mergedTranscripts,
+    transcriptsCount: mergedTranscripts.length,
+    lastActivity: 'Just now',
+  })
+}
+
 export function StudentRecordsProvider({ children }) {
   const [students, setStudents] = useState([])
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
@@ -187,20 +254,11 @@ export function StudentRecordsProvider({ children }) {
 
   const uploadTranscript = useCallback(async (file, options = {}) => {
     const onStateChange = options.onStateChange || (() => {})
+    const lowerName = file.name.toLowerCase()
+    const isZipUpload = lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
 
     if (!session?.access_token || !session?.tenant_id) {
       throw new Error('You must be signed in to upload transcripts.')
-    }
-
-    const lowerName = file.name.toLowerCase()
-    if (lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
-      onStateChange({
-        state: 'failed',
-        transcriptId: null,
-        message: 'ZIP uploads are not supported in this upload flow.',
-        error: 'ZIP uploads are not supported in this upload flow.',
-      })
-      throw new Error('ZIP uploads are not supported in this upload flow.')
     }
 
     onStateChange({
@@ -233,32 +291,175 @@ export function StudentRecordsProvider({ children }) {
     }
 
     const transcriptId = uploadPayload?.transcriptId
+    const batchId = uploadPayload?.batchId
+
+    if (batchId) {
+      onStateChange({
+        state: 'processing',
+        transcriptId: null,
+        batchId,
+        mode: 'batch',
+        message: `Processing batch ${batchId}`,
+        batchItems: normalizeBatchItems(uploadPayload?.items || []),
+        batchProgress: buildBatchProgress(uploadPayload),
+        error: '',
+      })
+
+      const fetchedTranscriptIds = new Set()
+      const locallyFailedTranscriptIds = new Set()
+      const batchResults = []
+      const batchItemOverrides = new Map()
+
+      while (true) {
+        await sleep(pollIntervalMs)
+
+        const statusResponse = await fetchWithTenantAuth(`${transcriptUploadUrl}/batches/${batchId}/status`)
+        const statusPayload = await parseApiPayload(statusResponse)
+
+        if (!statusResponse.ok) {
+          const errorMessage = getApiErrorMessage(statusResponse, statusPayload, 'Unable to check transcript batch status.')
+          onStateChange({
+            state: 'failed',
+            transcriptId: null,
+            batchId,
+            mode: 'batch',
+            message: errorMessage,
+            batchItems: normalizeBatchItems(statusPayload?.items || []),
+            batchProgress: buildBatchProgress(statusPayload),
+            error: errorMessage,
+          })
+          throw new Error(errorMessage)
+        }
+
+        const batchItems = normalizeBatchItems(statusPayload?.items || []).map((item) => {
+          const override = batchItemOverrides.get(item.transcriptId || item.filename)
+          return override ? { ...item, ...override } : item
+        })
+
+        for (const item of batchItems) {
+          if (!item.transcriptId || (!item.completed && item.status !== 'completed') || fetchedTranscriptIds.has(item.transcriptId) || locallyFailedTranscriptIds.has(item.transcriptId)) continue
+
+          const resultsResponse = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/transcripts/${item.transcriptId}/results`)
+          const parsed = await parseApiPayload(resultsResponse)
+
+          if (!resultsResponse.ok) {
+            const errorMessage = getApiErrorMessage(resultsResponse, parsed, `Unable to fetch transcript results for ${item.filename}.`)
+            locallyFailedTranscriptIds.add(item.transcriptId)
+            batchItemOverrides.set(item.transcriptId, {
+              status: 'failed',
+              completed: false,
+              error: errorMessage,
+            })
+            onStateChange({
+              state: 'processing',
+              transcriptId: null,
+              batchId,
+              mode: 'batch',
+              message: `Processing batch ${batchId}`,
+              batchItems: batchItems.map((batchItem) => batchItem.transcriptId === item.transcriptId ? { ...batchItem, ...batchItemOverrides.get(item.transcriptId) } : batchItem),
+              batchProgress: buildBatchProgress(statusPayload),
+              error: '',
+            })
+            continue
+          }
+
+          const validationError = validateParsedTranscript(parsed)
+          if (validationError) {
+            locallyFailedTranscriptIds.add(item.transcriptId)
+            batchItemOverrides.set(item.transcriptId, {
+              status: 'failed',
+              completed: false,
+              error: validationError,
+            })
+            onStateChange({
+              state: 'processing',
+              transcriptId: null,
+              batchId,
+              mode: 'batch',
+              message: `Processing batch ${batchId}`,
+              batchItems: batchItems.map((batchItem) => batchItem.transcriptId === item.transcriptId ? { ...batchItem, ...batchItemOverrides.get(item.transcriptId) } : batchItem),
+              batchProgress: buildBatchProgress(statusPayload),
+              error: '',
+            })
+            continue
+          }
+
+          fetchedTranscriptIds.add(item.transcriptId)
+          batchResults.push({
+            transcriptId: item.transcriptId,
+            filename: item.filename,
+            parsed,
+          })
+
+          if (!isZipUpload) continue
+
+          const mapped = mapParsedTranscript(parsed, { name: item.filename })
+          setStudents((current) => mergeStudentRecord(current, mapped))
+        }
+
+        onStateChange({
+          state: 'processing',
+          transcriptId: null,
+          batchId,
+          mode: 'batch',
+          message: `Processed ${Number(statusPayload?.completedFiles) || 0} of ${Number(statusPayload?.totalFiles) || batchItems.length || 0} files`,
+          batchItems,
+          batchProgress: buildBatchProgress(statusPayload),
+          error: '',
+        })
+
+        const totalFiles = Number(statusPayload?.totalFiles) || batchItems.length
+        const completedFiles = Number(statusPayload?.completedFiles) || 0
+        const failedFiles = Number(statusPayload?.failedFiles) || 0
+        const allDone = totalFiles > 0 && completedFiles + failedFiles >= totalFiles
+
+        if (allDone) {
+          await loadStudents().catch(() => {})
+          return {
+            batchId,
+            transcriptId: null,
+            destination: 'students-list',
+            isZipUpload,
+            results: batchResults,
+            batchProgress: {
+              totalFiles,
+              completedFiles,
+              failedFiles,
+            },
+            batchItems,
+          }
+        }
+      }
+    }
+
     if (!transcriptId) {
-      const errorMessage = 'Upload started but no transcript id was returned.'
-      onStateChange({ state: 'failed', transcriptId: null, message: errorMessage, error: errorMessage })
+      const errorMessage = 'Upload started but no transcript or batch id was returned.'
+      onStateChange({ state: 'failed', transcriptId: null, batchId: null, message: errorMessage, error: errorMessage })
       throw new Error(errorMessage)
     }
 
     onStateChange({
       state: 'processing',
       transcriptId,
+      batchId: null,
+      mode: 'single',
       message: `Processing transcript ${transcriptId}`,
       error: '',
     })
-
-    let statusPayload = uploadPayload
 
     while (true) {
       await sleep(pollIntervalMs)
 
       const statusResponse = await fetchWithTenantAuth(`${transcriptUploadUrl}/${transcriptId}/status`)
-      statusPayload = await parseApiPayload(statusResponse)
+      const statusPayload = await parseApiPayload(statusResponse)
 
       if (!statusResponse.ok) {
         const errorMessage = getApiErrorMessage(statusResponse, statusPayload, 'Unable to check transcript upload status.')
         onStateChange({
           state: 'failed',
           transcriptId,
+          batchId: null,
+          mode: 'single',
           message: errorMessage,
           error: errorMessage,
         })
@@ -270,6 +471,8 @@ export function StudentRecordsProvider({ children }) {
         onStateChange({
           state: 'failed',
           transcriptId,
+          batchId: null,
+          mode: 'single',
           message: errorMessage,
           error: errorMessage,
         })
@@ -281,6 +484,8 @@ export function StudentRecordsProvider({ children }) {
       onStateChange({
         state: 'processing',
         transcriptId,
+        batchId: null,
+        mode: 'single',
         message: `Processing transcript ${transcriptId}`,
         error: '',
       })
@@ -289,6 +494,8 @@ export function StudentRecordsProvider({ children }) {
     onStateChange({
       state: 'completed',
       transcriptId,
+      batchId: null,
+      mode: 'single',
       message: `Fetching results for ${transcriptId}`,
       error: '',
     })
@@ -301,35 +508,52 @@ export function StudentRecordsProvider({ children }) {
       onStateChange({
         state: 'failed',
         transcriptId,
+        batchId: null,
+        mode: 'single',
         message: errorMessage,
         error: errorMessage,
       })
       throw new Error(errorMessage)
     }
 
+    const validationError = validateParsedTranscript(parsed)
+    if (validationError) {
+      onStateChange({
+        state: 'failed',
+        transcriptId,
+        batchId: null,
+        mode: 'single',
+        message: validationError,
+        error: validationError,
+      })
+      throw new Error(validationError)
+    }
+
+    if (isZipUpload) {
+      await loadStudents().catch(() => {})
+      return {
+        parsed,
+        studentId: null,
+        transcriptId,
+        batchId: null,
+        destination: 'students-list',
+        isZipUpload: true,
+      }
+    }
+
     const mapped = mapParsedTranscript(parsed, file)
 
-    setStudents((current) => {
-      const existing = current.find((student) => student.id === mapped.studentId)
-      if (!existing) return [mapped.studentPatch, ...current]
-      const mergedTranscripts = [mapped.transcript, ...(existing.transcripts || [])]
-      return current.map((student) => student.id !== mapped.studentId ? student : {
-        ...student,
-        ...mapped.studentPatch,
-        email: student.email || mapped.studentPatch.email,
-        phone: student.phone || mapped.studentPatch.phone,
-        advisor: student.advisor || mapped.studentPatch.advisor,
-        program: student.program || mapped.studentPatch.program,
-        city: student.city || mapped.studentPatch.city,
-        tags: Array.from(new Set([...(mapped.studentPatch.tags || []), ...(student.tags || [])])),
-        transcripts: mergedTranscripts,
-        transcriptsCount: mergedTranscripts.length,
-        lastActivity: 'Just now',
-      })
-    })
+    setStudents((current) => mergeStudentRecord(current, mapped))
 
-    return { parsed, studentId: mapped.studentId, transcriptId }
-  }, [buildTenantAuthHeaders, fetchWithTenantAuth, session])
+    return {
+      parsed,
+      studentId: mapped.studentId,
+      transcriptId,
+      batchId: null,
+      destination: 'student-profile',
+      isZipUpload: false,
+    }
+  }, [buildTenantAuthHeaders, fetchWithTenantAuth, loadStudents, session])
 
   const value = useMemo(() => ({
     students,

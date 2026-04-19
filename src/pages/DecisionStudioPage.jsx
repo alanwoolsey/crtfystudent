@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { X } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
 
@@ -14,10 +16,23 @@ function normalizeDecisions(payload) {
 }
 
 export default function DecisionStudioPage() {
+  const navigate = useNavigate()
   const { session, fetchWithTenantAuth } = useAuth()
   const [decisions, setDecisions] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [createSuccess, setCreateSuccess] = useState('')
+  const [createForm, setCreateForm] = useState({
+    student: '',
+    program: '',
+    fit: '',
+    creditEstimate: '',
+    readiness: 'Draft',
+    reason: '',
+  })
 
   const loadDecisions = useCallback(async () => {
     if (!session?.access_token || !session?.tenant_id) return
@@ -50,13 +65,103 @@ export default function DecisionStudioPage() {
 
   const hasDecisions = useMemo(() => decisions.length > 0, [decisions])
 
+  function openCreateModal() {
+    setCreateError('')
+    setCreateSuccess('')
+    setCreateForm({
+      student: '',
+      program: '',
+      fit: '',
+      creditEstimate: '',
+      readiness: 'Draft',
+      reason: '',
+    })
+    setIsCreateOpen(true)
+  }
+
+  function closeCreateModal() {
+    setIsCreateOpen(false)
+    setCreateError('')
+    setCreateSuccess('')
+  }
+
+  function handleCreateChange(event) {
+    const { name, value } = event.target
+    setCreateForm((current) => ({
+      ...current,
+      [name]: value,
+    }))
+  }
+
+  async function handleCreateSubmit(event) {
+    event.preventDefault()
+    setCreateError('')
+    setCreateSuccess('')
+
+    if (!createForm.student.trim() || !createForm.program.trim() || !createForm.reason.trim()) {
+      setCreateError('Enter the student, program, and rationale.')
+      return
+    }
+
+    setIsCreating(true)
+
+    try {
+      const response = await fetchWithTenantAuth(decisionsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          student: createForm.student.trim(),
+          program: createForm.program.trim(),
+          fit: createForm.fit === '' ? null : Number(createForm.fit),
+          creditEstimate: createForm.creditEstimate === '' ? null : Number(createForm.creditEstimate),
+          readiness: createForm.readiness,
+          reason: createForm.reason.trim(),
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (response.status === 401) throw new Error('Your session is no longer valid. Please sign in again.')
+        if (response.status === 403) throw new Error('Your account is not authorized for this tenant.')
+        throw new Error(payload?.detail || payload?.message || 'Unable to create the decision packet.')
+      }
+
+      const createdItems = normalizeDecisions(payload)
+      if (createdItems.length > 0) {
+        setDecisions((current) => [...createdItems, ...current])
+      } else if (payload && typeof payload === 'object') {
+        setDecisions((current) => [payload, ...current])
+      } else {
+        await loadDecisions()
+      }
+
+      setCreateSuccess('Decision packet created.')
+      window.setTimeout(() => {
+        closeCreateModal()
+        if (payload?.id) {
+          navigate(`/decision-studio/${payload.id}`)
+        }
+      }, 300)
+    } catch (nextError) {
+      setCreateError(nextError.message || 'Unable to create the decision packet.')
+    } finally {
+      setIsCreating(false)
+    }
+  }
+
   return (
     <div className="page-wrap">
       <SectionHeader
         eyebrow="Explainable decisioning"
         title="Decision Studio"
         subtitle="Move beyond notes and queues. Build a decision packet staff can approve, defend, and sync downstream."
-        actions={<button className="primary-button">Create decision packet</button>}
+        actions={(
+          <button type="button" className="primary-button" onClick={openCreateModal}>
+            Create decision packet
+          </button>
+        )}
       />
 
       <section className="panel decision-hero">
@@ -99,7 +204,7 @@ export default function DecisionStudioPage() {
           </div>
           {hasDecisions ? (
             <div className="table-wrap">
-              <table>
+              <table className="clickable-table">
                 <thead>
                   <tr>
                     <th>Student</th>
@@ -112,7 +217,20 @@ export default function DecisionStudioPage() {
                 </thead>
                 <tbody>
                   {decisions.map((item) => (
-                    <tr key={item.id || item.student}>
+                    <tr
+                      key={item.id || item.student}
+                      className="clickable-row"
+                      onClick={() => item.id && navigate(`/decision-studio/${item.id}`)}
+                      onKeyDown={(event) => {
+                        if (!item.id) return
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          navigate(`/decision-studio/${item.id}`)
+                        }
+                      }}
+                      tabIndex={item.id ? 0 : -1}
+                      role={item.id ? 'button' : undefined}
+                    >
                       <td><strong>{item.student}</strong></td>
                       <td>{item.program}</td>
                       <td>{item.fit}%</td>
@@ -128,6 +246,107 @@ export default function DecisionStudioPage() {
             <p className="muted-copy">No decision packets are available yet.</p>
           )}
         </section>
+      ) : null}
+
+      {isCreateOpen ? (
+        <div className="modal-scrim" onClick={closeCreateModal} role="presentation">
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="create-decision-title">
+            <div className="panel-header">
+              <div>
+                <h3 id="create-decision-title">Create decision packet</h3>
+                <p>Capture a review-ready packet and sync it once the backend create route is available.</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeCreateModal} aria-label="Close create decision packet">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form className="auth-form password-form course-modal-body" onSubmit={handleCreateSubmit}>
+              <label className="auth-field">
+                <span>Student</span>
+                <input
+                  name="student"
+                  type="text"
+                  value={createForm.student}
+                  onChange={handleCreateChange}
+                  placeholder="Avery Carter"
+                  required
+                />
+              </label>
+
+              <label className="auth-field">
+                <span>Program</span>
+                <input
+                  name="program"
+                  type="text"
+                  value={createForm.program}
+                  onChange={handleCreateChange}
+                  placeholder="Nursing transfer review"
+                  required
+                />
+              </label>
+
+              <div className="detail-grid">
+                <label className="auth-field">
+                  <span>Fit score</span>
+                  <input
+                    name="fit"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={createForm.fit}
+                    onChange={handleCreateChange}
+                    placeholder="92"
+                  />
+                </label>
+
+                <label className="auth-field">
+                  <span>Credit estimate</span>
+                  <input
+                    name="creditEstimate"
+                    type="number"
+                    min="0"
+                    value={createForm.creditEstimate}
+                    onChange={handleCreateChange}
+                    placeholder="38"
+                  />
+                </label>
+              </div>
+
+              <label className="auth-field">
+                <span>Readiness</span>
+                <select name="readiness" value={createForm.readiness} onChange={handleCreateChange}>
+                  <option value="Draft">Draft</option>
+                  <option value="Auto-certify">Auto-certify</option>
+                  <option value="Counselor review">Counselor review</option>
+                  <option value="Hold">Hold</option>
+                </select>
+              </label>
+
+              <label className="auth-field">
+                <span>Rationale</span>
+                <textarea
+                  name="reason"
+                  rows="5"
+                  value={createForm.reason}
+                  onChange={handleCreateChange}
+                  placeholder="Explain the evidence, fit, trust signals, and what should happen next."
+                  required
+                />
+              </label>
+
+              {createError ? <p className="auth-error">{createError}</p> : null}
+              {createSuccess ? <p className="auth-success">{createSuccess}</p> : null}
+
+              <div className="password-actions">
+                <button type="button" className="secondary-button" onClick={closeCreateModal}>Cancel</button>
+                <button type="submit" className="primary-button" disabled={isCreating}>
+                  {isCreating ? 'Creating...' : 'Create packet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   )
