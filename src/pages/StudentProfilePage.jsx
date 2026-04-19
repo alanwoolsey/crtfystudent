@@ -11,6 +11,9 @@ export default function StudentProfilePage() {
   const { students } = useStudentRecords()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const student = useMemo(() => students.find((item) => item.id === studentId) || students[0], [studentId, students])
+  const headerSubtitle = student.program === 'Transcript intake'
+    ? 'Transcript intake'
+    : `${student.program} - Goal: ${student.institutionGoal}`
 
   return (
     <div className="page-wrap">
@@ -18,7 +21,7 @@ export default function StudentProfilePage() {
       <SectionHeader
         eyebrow="Student 360"
         title={student.name}
-        subtitle={`${student.program} · Goal: ${student.institutionGoal}`}
+        subtitle={headerSubtitle}
         actions={<button className="primary-button">Release outcome</button>}
       />
 

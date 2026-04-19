@@ -242,8 +242,19 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .modal-panel, .upload-status-panel {
   width: min(880px, 100%); background: white; border-radius: 24px; padding: 22px; box-shadow: 0 24px 70px rgba(0,0,0,0.18);
 }
+.modal-panel {
+  max-height: min(720px, calc(100vh - 40px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .upload-status-panel { width: min(420px, 100%); text-align: center; }
-.course-modal-body { margin-top: 12px; }
+.course-modal-body {
+  margin-top: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .spinner {
   width: 42px; height: 42px; margin: 0 auto 16px; border-radius: 999px; border: 3px solid #dbe4ff; border-top-color: var(--indigo); animation: spin 1s linear infinite;
 }
