@@ -13,7 +13,10 @@ import {
   Sparkles,
   Upload,
   UserCircle2,
+  X,
 } from 'lucide-react'
+import AuthScreen from './components/AuthScreen'
+import { useAuth } from './context/AuthContext'
 import DashboardPage from './pages/DashboardPage'
 import StudentsPage from './pages/StudentsPage'
 import StudentProfilePage from './pages/StudentProfilePage'
@@ -22,8 +25,15 @@ import TrustCenterPage from './pages/TrustCenterPage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import ProspectPortalPage from './pages/ProspectPortalPage'
 import DecisionStudioPage from './pages/DecisionStudioPage'
-import { currentUser, quickSignals } from './data/mockData'
+import { quickSignals } from './data/mockData'
 import { useStudentRecords } from './context/StudentRecordsContext'
+
+const idleUploadState = {
+  state: 'idle',
+  transcriptId: null,
+  message: '',
+  error: '',
+}
 
 const navItems = [
   { to: '/', label: 'Command Center', icon: LayoutDashboard },
@@ -40,9 +50,15 @@ export default function App() {
   const location = useLocation()
   const fileInputRef = useRef(null)
   const { uploadTranscript } = useStudentRecords()
-  const [isUploading, setIsUploading] = useState(false)
-  const [uploadError, setUploadError] = useState('')
-  const [uploadStatus, setUploadStatus] = useState('')
+  const { session, isAuthenticated, changePassword, logout } = useAuth()
+  const [uploadState, setUploadState] = useState(idleUploadState)
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const [previousPassword, setPreviousPassword] = useState('')
+  const [proposedPassword, setProposedPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   const routeLabel = useMemo(() => {
     const match = navItems.find((item) => item.to === location.pathname)
@@ -51,30 +67,95 @@ export default function App() {
     return 'Command Center'
   }, [location.pathname])
 
+  if (!isAuthenticated) return <AuthScreen />
+
   async function handleFileChange(event) {
     const file = event.target.files?.[0]
     if (!file) return
 
-    setIsUploading(true)
-    setUploadError('')
-    setUploadStatus(`Uploading ${file.name}`)
-
-    const phaseTwo = window.setTimeout(() => setUploadStatus(`Extracting records from ${file.name}`), 500)
-    const phaseThree = window.setTimeout(() => setUploadStatus(`Building certified outcome for ${file.name}`), 1200)
+    setUploadState({
+      state: 'uploading',
+      transcriptId: null,
+      message: `Uploading ${file.name}`,
+      error: '',
+    })
 
     try {
-      const result = await uploadTranscript(file)
-      setUploadStatus(`Opening Student 360 for ${result.studentId}`)
+      const result = await uploadTranscript(file, {
+        onStateChange: (nextState) => {
+          setUploadState((current) => ({
+            ...current,
+            ...nextState,
+          }))
+        },
+      })
+      setUploadState({
+        state: 'completed',
+        transcriptId: result.transcriptId || null,
+        message: `Opening Student 360 for ${result.studentId}`,
+        error: '',
+      })
       navigate(`/students/${result.studentId}`)
+      window.setTimeout(() => setUploadState(idleUploadState), 0)
     } catch (error) {
-      setUploadError(error.message || 'Upload failed')
-      setUploadStatus('Upload failed')
+      setUploadState((current) => ({
+        ...current,
+        state: 'failed',
+        message: error.message || current.message || 'Upload failed',
+        error: error.message || 'Upload failed',
+      }))
     } finally {
-      window.clearTimeout(phaseTwo)
-      window.clearTimeout(phaseThree)
-      setIsUploading(false)
       event.target.value = ''
     }
+  }
+
+  function dismissUploadState() {
+    setUploadState(idleUploadState)
+  }
+
+  async function handleChangePasswordSubmit(event) {
+    event.preventDefault()
+    setPasswordError('')
+    setPasswordSuccess('')
+
+    if (!previousPassword || !proposedPassword) {
+      setPasswordError('Enter your current and new password.')
+      return
+    }
+
+    if (proposedPassword !== confirmPassword) {
+      setPasswordError('New password and confirmation must match.')
+      return
+    }
+
+    setIsChangingPassword(true)
+
+    try {
+      await changePassword({ previousPassword, proposedPassword })
+      setPasswordSuccess('Password updated.')
+      setPreviousPassword('')
+      setProposedPassword('')
+      setConfirmPassword('')
+    } catch (error) {
+      setPasswordError(error.message || 'Unable to change password.')
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
+
+  function openChangePasswordModal() {
+    setPasswordError('')
+    setPasswordSuccess('')
+    setIsChangePasswordOpen(true)
+  }
+
+  function closeChangePasswordModal() {
+    setIsChangePasswordOpen(false)
+    setPasswordError('')
+    setPasswordSuccess('')
+    setPreviousPassword('')
+    setProposedPassword('')
+    setConfirmPassword('')
   }
 
   return (
@@ -111,21 +192,25 @@ export default function App() {
                 type="button"
                 className="primary-button topbar-upload-button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
+                disabled={uploadState.state === 'uploading' || uploadState.state === 'processing'}
               >
                 <Upload size={16} />
-                <span>{isUploading ? 'Uploading…' : 'Upload transcript'}</span>
+                <span>{uploadState.state === 'uploading' || uploadState.state === 'processing' ? 'Uploading...' : 'Upload transcript'}</span>
               </button>
-              {uploadError ? <p className="upload-error">{uploadError}</p> : null}
+              {uploadState.state === 'failed' && uploadState.error ? <p className="upload-error">{uploadState.error}</p> : null}
             </div>
             <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
+            <button type="button" className="secondary-button" onClick={openChangePasswordModal}>
+              Change password
+            </button>
             <div className="user-pill">
               <UserCircle2 size={18} />
               <div>
-                <strong>{currentUser.name}</strong>
-                <span>{currentUser.role}</span>
+                <strong>{session.username}</strong>
+                <span>{session.tenant_name}</span>
               </div>
             </div>
+            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
           </div>
         </div>
       </header>
@@ -157,12 +242,73 @@ export default function App() {
         </Routes>
       </main>
 
-      {isUploading ? (
+      {uploadState.state !== 'idle' ? (
         <div className="modal-scrim" role="presentation">
           <div className="upload-status-panel" role="status" aria-live="polite">
-            <div className="spinner" aria-hidden="true" />
-            <h3>Creating certified intake record</h3>
-            <p>{uploadStatus}</p>
+            {uploadState.state === 'uploading' || uploadState.state === 'processing' ? <div className="spinner" aria-hidden="true" /> : null}
+            <h3>Transcript upload: {uploadState.state}</h3>
+            <p>{uploadState.message}</p>
+            {uploadState.transcriptId ? <p className="upload-job-id">Transcript ID: {uploadState.transcriptId}</p> : null}
+            {uploadState.state === 'failed' ? (
+              <button type="button" className="secondary-button" onClick={dismissUploadState}>Close</button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {isChangePasswordOpen ? (
+        <div className="modal-scrim" onClick={closeChangePasswordModal} role="presentation">
+          <div className="modal-panel" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>Change password</h3>
+                <p>{session.username}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeChangePasswordModal} aria-label="Close change password">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form className="auth-form password-form" onSubmit={handleChangePasswordSubmit}>
+              <label className="auth-field">
+                <span>Current password</span>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={previousPassword}
+                  onChange={(event) => setPreviousPassword(event.target.value)}
+                  required
+                />
+              </label>
+              <label className="auth-field">
+                <span>New password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={proposedPassword}
+                  onChange={(event) => setProposedPassword(event.target.value)}
+                  required
+                />
+              </label>
+              <label className="auth-field">
+                <span>Confirm new password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  required
+                />
+              </label>
+              {passwordError ? <p className="auth-error">{passwordError}</p> : null}
+              {passwordSuccess ? <p className="auth-success">{passwordSuccess}</p> : null}
+              <div className="password-actions">
+                <button type="button" className="secondary-button" onClick={closeChangePasswordModal}>Cancel</button>
+                <button type="submit" className="primary-button" disabled={isChangingPassword}>
+                  {isChangingPassword ? 'Saving...' : 'Update password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

@@ -8,9 +8,43 @@ import { useStudentRecords } from '../context/StudentRecordsContext'
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError } = useStudentRecords()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const student = useMemo(() => students.find((item) => item.id === studentId) || students[0], [studentId, students])
+
+  if (isLoadingStudents && !student) {
+    return (
+      <div className="page-wrap">
+        <Link to="/students" className="back-link"><ArrowLeft size={16} /> Back to students</Link>
+        <section className="panel">
+          <p className="muted-copy">Loading student...</p>
+        </section>
+      </div>
+    )
+  }
+
+  if (studentsError && !student) {
+    return (
+      <div className="page-wrap">
+        <Link to="/students" className="back-link"><ArrowLeft size={16} /> Back to students</Link>
+        <section className="panel">
+          <p className="auth-error">{studentsError}</p>
+        </section>
+      </div>
+    )
+  }
+
+  if (!student) {
+    return (
+      <div className="page-wrap">
+        <Link to="/students" className="back-link"><ArrowLeft size={16} /> Back to students</Link>
+        <section className="panel">
+          <p className="muted-copy">Student not found.</p>
+        </section>
+      </div>
+    )
+  }
+
   const headerSubtitle = student.program === 'Transcript intake'
     ? 'Transcript intake'
     : `${student.program} - Goal: ${student.institutionGoal}`

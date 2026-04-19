@@ -1,9 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
-import { students as seedStudents } from '../data/mockData'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { useAuth } from './AuthContext'
 
 const StudentRecordsContext = createContext(null)
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
-const transcriptParseUrl = `${apiBaseUrl}/api/v1/transcripts/parse`
+const transcriptUploadUrl = `${apiBaseUrl}/api/v1/transcripts/uploads`
+const studentsUrl = `${apiBaseUrl}/api/v1/students`
+const pollIntervalMs = 1500
 
 function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '')
@@ -12,6 +14,32 @@ function slugify(value) {
 function formatNumber(value, digits = 2) {
   const numeric = Number(value)
   return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+async function parseApiPayload(response) {
+  const text = await response.text()
+  if (!text) return null
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { message: text }
+  }
+}
+
+function getApiErrorMessage(response, payload, fallback) {
+  if (response.status === 401) return 'Your session is not authorized for transcript uploads.'
+  return payload?.message || payload?.detail || payload?.error || fallback
+}
+
+function getStudentsErrorMessage(response, payload) {
+  if (response.status === 401) return 'Your session is no longer valid. Please sign in again.'
+  if (response.status === 403) return 'Your account is not authorized for this tenant.'
+  return payload?.detail || payload?.message || 'Unable to load students.'
 }
 
 function buildTranscriptSteps(audit = []) {
@@ -108,58 +136,208 @@ function mapParsedTranscript(parsed, file) {
 }
 
 export function StudentRecordsProvider({ children }) {
-  const [students, setStudents] = useState(seedStudents)
+  const [students, setStudents] = useState([])
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false)
+  const [studentsError, setStudentsError] = useState('')
+  const { session, buildTenantAuthHeaders, fetchWithTenantAuth } = useAuth()
 
-  const uploadTranscript = useCallback(async (file) => {
-    try {
-      const formData = new FormData()
-      formData.append('file', file, file.name)
-      formData.append('document_type', 'auto')
-      formData.append('use_bedrock', 'true')
-
-      const response = await fetch(transcriptParseUrl, { method: 'POST', body: formData })
-      if (!response.ok) throw new Error(`Upload failed with status ${response.status}`)
-      const parsed = await response.json()
-      const mapped = mapParsedTranscript(parsed, file)
-
-      setStudents((current) => {
-        const existing = current.find((student) => student.id === mapped.studentId)
-        if (!existing) return [mapped.studentPatch, ...current]
-        const mergedTranscripts = [mapped.transcript, ...(existing.transcripts || [])]
-        return current.map((student) => student.id !== mapped.studentId ? student : {
-          ...student,
-          ...mapped.studentPatch,
-          email: student.email || mapped.studentPatch.email,
-          phone: student.phone || mapped.studentPatch.phone,
-          advisor: student.advisor || mapped.studentPatch.advisor,
-          program: student.program || mapped.studentPatch.program,
-          city: student.city || mapped.studentPatch.city,
-          tags: Array.from(new Set([...(mapped.studentPatch.tags || []), ...(student.tags || [])])),
-          transcripts: mergedTranscripts,
-          transcriptsCount: mergedTranscripts.length,
-          lastActivity: 'Just now',
-        })
-      })
-
-      return { parsed, studentId: mapped.studentId }
-    } catch {
-      const fallbackId = `STU-${Math.floor(10000 + Math.random() * 90000)}`
-      const mockParsed = {
-        documentId: `TR-${Date.now()}`,
-        demographic: { firstName: 'New', lastName: 'Prospect', institutionName: 'Uploaded institution', studentId: fallbackId },
-        courses: [],
-        metadata: { document_type: 'transcript', parser_confidence: 0.94 },
-        grandGPA: { cumulativeGPA: 3.4, unitsEarned: 24 },
-        termGPAs: [],
-        isFraudulent: false,
-      }
-      const mapped = mapParsedTranscript(mockParsed, file)
-      setStudents((current) => [mapped.studentPatch, ...current])
-      return { parsed: mockParsed, studentId: mapped.studentId }
+  const loadStudents = useCallback(async (query = '') => {
+    if (!session?.access_token || !session?.tenant_id) {
+      setStudents([])
+      setStudentsError('')
+      setIsLoadingStudents(false)
+      return []
     }
-  }, [])
 
-  const value = useMemo(() => ({ students, uploadTranscript }), [students, uploadTranscript])
+    setIsLoadingStudents(true)
+    setStudentsError('')
+
+    const requestUrl = query
+      ? `${studentsUrl}?q=${encodeURIComponent(query)}`
+      : studentsUrl
+
+    try {
+      const response = await fetchWithTenantAuth(requestUrl)
+      const payload = await parseApiPayload(response)
+
+      if (!response.ok) throw new Error(getStudentsErrorMessage(response, payload))
+
+      const nextStudents = Array.isArray(payload) ? payload : []
+      setStudents(nextStudents)
+      return nextStudents
+    } catch (error) {
+      setStudentsError(error.message || 'Unable to load students.')
+      setStudents([])
+      throw error
+    } finally {
+      setIsLoadingStudents(false)
+    }
+  }, [fetchWithTenantAuth, session])
+
+  useEffect(() => {
+    if (!session?.access_token || !session?.tenant_id) {
+      setStudents([])
+      setStudentsError('')
+      setIsLoadingStudents(false)
+      return
+    }
+
+    loadStudents().catch(() => {})
+  }, [loadStudents, session])
+
+  const uploadTranscript = useCallback(async (file, options = {}) => {
+    const onStateChange = options.onStateChange || (() => {})
+
+    if (!session?.access_token || !session?.tenant_id) {
+      throw new Error('You must be signed in to upload transcripts.')
+    }
+
+    const lowerName = file.name.toLowerCase()
+    if (lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
+      onStateChange({
+        state: 'failed',
+        transcriptId: null,
+        message: 'ZIP uploads are not supported in this upload flow.',
+        error: 'ZIP uploads are not supported in this upload flow.',
+      })
+      throw new Error('ZIP uploads are not supported in this upload flow.')
+    }
+
+    onStateChange({
+      state: 'uploading',
+      transcriptId: null,
+      message: `Uploading ${file.name}`,
+      error: '',
+    })
+
+    const formData = new FormData()
+    formData.append('file', file, file.name)
+    formData.append('document_type', 'auto')
+    formData.append('use_bedrock', 'true')
+
+    const uploadResponse = await fetchWithTenantAuth(transcriptUploadUrl, {
+      method: 'POST',
+      body: formData,
+    })
+    const uploadPayload = await parseApiPayload(uploadResponse)
+
+    if (!uploadResponse.ok) {
+      const errorMessage = getApiErrorMessage(uploadResponse, uploadPayload, 'Transcript upload failed.')
+      onStateChange({
+        state: 'failed',
+        transcriptId: uploadPayload?.transcriptId || null,
+        message: errorMessage,
+        error: errorMessage,
+      })
+      throw new Error(errorMessage)
+    }
+
+    const transcriptId = uploadPayload?.transcriptId
+    if (!transcriptId) {
+      const errorMessage = 'Upload started but no transcript id was returned.'
+      onStateChange({ state: 'failed', transcriptId: null, message: errorMessage, error: errorMessage })
+      throw new Error(errorMessage)
+    }
+
+    onStateChange({
+      state: 'processing',
+      transcriptId,
+      message: `Processing transcript ${transcriptId}`,
+      error: '',
+    })
+
+    let statusPayload = uploadPayload
+
+    while (true) {
+      await sleep(pollIntervalMs)
+
+      const statusResponse = await fetchWithTenantAuth(`${transcriptUploadUrl}/${transcriptId}/status`)
+      statusPayload = await parseApiPayload(statusResponse)
+
+      if (!statusResponse.ok) {
+        const errorMessage = getApiErrorMessage(statusResponse, statusPayload, 'Unable to check transcript upload status.')
+        onStateChange({
+          state: 'failed',
+          transcriptId,
+          message: errorMessage,
+          error: errorMessage,
+        })
+        throw new Error(errorMessage)
+      }
+
+      if (statusPayload?.status === 'failed') {
+        const errorMessage = statusPayload?.error || 'Transcript processing failed.'
+        onStateChange({
+          state: 'failed',
+          transcriptId,
+          message: errorMessage,
+          error: errorMessage,
+        })
+        throw new Error(errorMessage)
+      }
+
+      if (statusPayload?.completed === true || statusPayload?.status === 'completed') break
+
+      onStateChange({
+        state: 'processing',
+        transcriptId,
+        message: `Processing transcript ${transcriptId}`,
+        error: '',
+      })
+    }
+
+    onStateChange({
+      state: 'completed',
+      transcriptId,
+      message: `Fetching results for ${transcriptId}`,
+      error: '',
+    })
+
+    const resultsResponse = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/transcripts/${transcriptId}/results`)
+    const parsed = await parseApiPayload(resultsResponse)
+
+    if (!resultsResponse.ok) {
+      const errorMessage = getApiErrorMessage(resultsResponse, parsed, 'Unable to fetch transcript results.')
+      onStateChange({
+        state: 'failed',
+        transcriptId,
+        message: errorMessage,
+        error: errorMessage,
+      })
+      throw new Error(errorMessage)
+    }
+
+    const mapped = mapParsedTranscript(parsed, file)
+
+    setStudents((current) => {
+      const existing = current.find((student) => student.id === mapped.studentId)
+      if (!existing) return [mapped.studentPatch, ...current]
+      const mergedTranscripts = [mapped.transcript, ...(existing.transcripts || [])]
+      return current.map((student) => student.id !== mapped.studentId ? student : {
+        ...student,
+        ...mapped.studentPatch,
+        email: student.email || mapped.studentPatch.email,
+        phone: student.phone || mapped.studentPatch.phone,
+        advisor: student.advisor || mapped.studentPatch.advisor,
+        program: student.program || mapped.studentPatch.program,
+        city: student.city || mapped.studentPatch.city,
+        tags: Array.from(new Set([...(mapped.studentPatch.tags || []), ...(student.tags || [])])),
+        transcripts: mergedTranscripts,
+        transcriptsCount: mergedTranscripts.length,
+        lastActivity: 'Just now',
+      })
+    })
+
+    return { parsed, studentId: mapped.studentId, transcriptId }
+  }, [buildTenantAuthHeaders, fetchWithTenantAuth, session])
+
+  const value = useMemo(() => ({
+    students,
+    isLoadingStudents,
+    studentsError,
+    loadStudents,
+    uploadTranscript,
+  }), [isLoadingStudents, loadStudents, students, studentsError, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

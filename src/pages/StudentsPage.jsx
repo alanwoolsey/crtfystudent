@@ -1,9 +1,29 @@
+import { useMemo, useState } from 'react'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 
 export default function StudentsPage() {
-  const { students } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudents } = useStudentRecords()
+  const [query, setQuery] = useState('')
+
+  const filteredStudents = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    if (!search) return students
+
+    return students.filter((student) => {
+      const haystack = [
+        student.name,
+        student.program,
+        student.advisor,
+        student.institutionGoal,
+        student.risk,
+        String(student.fitScore),
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      return haystack.includes(search)
+    })
+  }, [query, students])
 
   return (
     <div className="page-wrap">
@@ -14,7 +34,12 @@ export default function StudentsPage() {
       />
 
       <div className="toolbar-row">
-        <input className="filter-input" placeholder="Filter by name, program, advisor, institution, risk, or fit" />
+        <input
+          className="filter-input"
+          placeholder="Filter by name, program, advisor, institution, risk, or fit"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
         <div className="pill-row">
           <span className="tag active-tag">All students</span>
           <span className="tag">High fit</span>
@@ -23,9 +48,32 @@ export default function StudentsPage() {
         </div>
       </div>
 
-      <section className="student-grid">
-        {students.map((student) => <StudentCard key={student.id} student={student} />)}
-      </section>
+      {isLoadingStudents ? (
+        <section className="panel">
+          <p className="muted-copy">Loading students...</p>
+        </section>
+      ) : null}
+
+      {!isLoadingStudents && studentsError ? (
+        <section className="panel">
+          <p className="auth-error">{studentsError}</p>
+          <button type="button" className="secondary-button" onClick={() => loadStudents()}>
+            Retry
+          </button>
+        </section>
+      ) : null}
+
+      {!isLoadingStudents && !studentsError ? (
+        <section className="student-grid">
+          {filteredStudents.length ? (
+            filteredStudents.map((student) => <StudentCard key={student.id} student={student} />)
+          ) : (
+            <article className="panel">
+              <p className="muted-copy">No students match that filter.</p>
+            </article>
+          )}
+        </section>
+      ) : null}
     </div>
   )
 }

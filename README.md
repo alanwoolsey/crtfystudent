@@ -39,6 +39,23 @@ For AWS Amplify, set the environment variable named `VITE_API_URL` to your deplo
 VITE_API_URL=https://api.example.com
 ```
 
+## Authentication
+
+The frontend now requires authentication before rendering the app shell.
+
+- Login: `POST /api/auth/login`
+- Forced new-password completion: `POST /api/auth/complete-new-password`
+- In-session password change: `POST /api/auth/change-password`
+
+The authenticated session stores:
+
+- `access_token`
+- `id_token`
+- `refresh_token`
+- `tenant_id`
+- `tenant_name`
+- `tenant_code`
+
 ## Build
 
 ```bash
