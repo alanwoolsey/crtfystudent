@@ -1,20 +1,58 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 
 const studentsPerPage = 8
+const quickFilters = [
+  { key: 'all', label: 'All students' },
+  { key: 'high-fit', label: 'High fit' },
+  { key: 'trust-hold', label: 'Trust hold' },
+  { key: 'need-evidence', label: 'Need evidence' },
+]
 
 export default function StudentsPage() {
   const { students, isLoadingStudents, studentsError, loadStudents } = useStudentRecords()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState('all')
   const [page, setPage] = useState(1)
+
+  useEffect(() => {
+    setQuery(searchParams.get('q') || '')
+  }, [searchParams])
+
+  function handleQueryChange(nextQuery) {
+    setQuery(nextQuery)
+    const nextParams = new URLSearchParams(searchParams)
+    if (nextQuery.trim()) nextParams.set('q', nextQuery)
+    else nextParams.delete('q')
+    setSearchParams(nextParams, { replace: true })
+  }
 
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
-    if (!search) return students
+    const quickFilteredStudents = students.filter((student) => {
+      const stage = String(student.stage || '').toLowerCase()
+      const risk = String(student.risk || '').toLowerCase()
+      const nextAction = String(student.nextBestAction || student.recommendation?.nextBestAction || '').toLowerCase()
+      const tags = Array.isArray(student.tags) ? student.tags.map((tag) => String(tag).toLowerCase()) : []
+      const fitScore = Number(student.fitScore) || 0
 
-    return students.filter((student) => {
+      if (activeFilter === 'high-fit') return fitScore >= 85
+      if (activeFilter === 'trust-hold') {
+        return stage.includes('trust hold') || risk === 'high' || tags.includes('trust hold')
+      }
+      if (activeFilter === 'need-evidence') {
+        return stage.includes('pending evidence') || stage.includes('needs evidence') || nextAction.includes('request') || nextAction.includes('evidence')
+      }
+      return true
+    })
+
+    if (!search) return quickFilteredStudents
+
+    return quickFilteredStudents.filter((student) => {
       const haystack = [
         student.name,
         student.program,
@@ -22,15 +60,16 @@ export default function StudentsPage() {
         student.institutionGoal,
         student.risk,
         String(student.fitScore),
+        student.nextBestAction,
       ].filter(Boolean).join(' ').toLowerCase()
 
       return haystack.includes(search)
     })
-  }, [query, students])
+  }, [activeFilter, query, students])
 
   useEffect(() => {
     setPage(1)
-  }, [query, students.length])
+  }, [activeFilter, query, students.length])
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / studentsPerPage))
   const currentPage = Math.min(page, totalPages)
@@ -55,13 +94,19 @@ export default function StudentsPage() {
           className="filter-input"
           placeholder="Filter by name, program, advisor, institution, risk, or fit"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => handleQueryChange(event.target.value)}
         />
         <div className="pill-row">
-          <span className="tag active-tag">All students</span>
-          <span className="tag">High fit</span>
-          <span className="tag">Trust hold</span>
-          <span className="tag">Need evidence</span>
+          {quickFilters.map((filter) => (
+            <button
+              key={filter.key}
+              type="button"
+              className={`tag ${activeFilter === filter.key ? 'active-tag' : ''}`}
+              onClick={() => setActiveFilter(filter.key)}
+            >
+              {filter.label}
+            </button>
+          ))}
         </div>
       </div>
 

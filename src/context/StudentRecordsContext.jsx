@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
+import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
 const StudentRecordsContext = createContext(null)
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
@@ -40,6 +41,13 @@ function getStudentsErrorMessage(response, payload) {
   if (response.status === 401) return 'Your session is no longer valid. Please sign in again.'
   if (response.status === 403) return 'Your account is not authorized for this tenant.'
   return payload?.detail || payload?.message || 'Unable to load students.'
+}
+
+function normalizeChecklistPayload(payload) {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload?.checklist)) return payload.checklist
+  return []
 }
 
 function buildTranscriptSteps(audit = []) {
@@ -200,6 +208,40 @@ function mergeStudentRecord(currentStudents, mapped) {
     transcriptsCount: mergedTranscripts.length,
     lastActivity: 'Just now',
   })
+}
+
+function updateStudentChecklistInCollection(currentStudents, studentId, nextChecklist) {
+  return currentStudents.map((student) => {
+    if (student.id !== studentId) return student
+
+    const completedCount = nextChecklist.filter((item) => item.done || item.status === 'complete').length
+    const totalCount = nextChecklist.length
+    const incompleteCount = totalCount - completedCount
+    const nextStage = incompleteCount === 0 ? 'Decision-ready' : incompleteCount === 1 ? 'Nearly complete' : student.stage
+
+    return {
+      ...student,
+      checklist: nextChecklist,
+      stage: nextStage,
+      lastActivity: 'Just now',
+    }
+  })
+}
+
+function patchChecklistItem(checklist, itemId, status) {
+  const nextChecklist = (Array.isArray(checklist) ? checklist : []).map((item, index) => {
+    const fallbackId = item.id || `${item.code || 'item'}-${index}`
+    if (String(fallbackId) !== String(itemId)) return item
+
+    return {
+      ...item,
+      id: fallbackId,
+      status,
+      done: status === 'complete',
+    }
+  })
+
+  return nextChecklist
 }
 
 export function StudentRecordsProvider({ children }) {
@@ -555,13 +597,78 @@ export function StudentRecordsProvider({ children }) {
     }
   }, [buildTenantAuthHeaders, fetchWithTenantAuth, loadStudents, session])
 
+  const loadStudentChecklist = useCallback(async (studentId) => {
+    if (!studentId || !session?.access_token || !session?.tenant_id) return []
+
+    const response = await fetchWithTenantAuth(getChecklistUrl(studentId))
+    const payload = await parseApiPayload(response)
+
+    if (!response.ok) {
+      throw new Error(getChecklistErrorMessage(response, payload, 'Unable to load checklist.'))
+    }
+
+    const nextChecklist = normalizeChecklistPayload(payload)
+    setStudents((current) => updateStudentChecklistInCollection(current, studentId, nextChecklist))
+    return nextChecklist
+  }, [fetchWithTenantAuth, session])
+
+  const updateChecklistItemStatus = useCallback(async ({ studentId, itemId, status }) => {
+    if (!studentId || !itemId || !status) {
+      throw new Error('studentId, itemId, and status are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const optimisticChecklist = patchChecklistItem(existingStudent?.checklist, itemId, status)
+
+    if (existingStudent?.checklist?.length) {
+      setStudents((current) => updateStudentChecklistInCollection(current, studentId, optimisticChecklist))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) return optimisticChecklist
+
+    try {
+      const response = await fetchWithTenantAuth(getChecklistItemStatusUrl(studentId, itemId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status }),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (!response.ok) {
+        throw new Error(getChecklistErrorMessage(response, payload, 'Unable to update checklist item.'))
+      }
+
+      const nextChecklist = normalizeChecklistPayload(payload)
+      if (nextChecklist.length) {
+        setStudents((current) => updateStudentChecklistInCollection(current, studentId, nextChecklist))
+        return nextChecklist
+      }
+
+      return optimisticChecklist
+    } catch (error) {
+      if (existingStudent?.checklist?.length) {
+        setStudents((current) => updateStudentChecklistInCollection(current, studentId, existingStudent.checklist))
+      }
+
+      if (String(error.message || '').includes('not available')) {
+        return optimisticChecklist
+      }
+
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
   const value = useMemo(() => ({
     students,
     isLoadingStudents,
     studentsError,
     loadStudents,
+    loadStudentChecklist,
+    updateChecklistItemStatus,
     uploadTranscript,
-  }), [isLoadingStudents, loadStudents, students, studentsError, uploadTranscript])
+  }), [isLoadingStudents, loadStudentChecklist, loadStudents, students, studentsError, updateChecklistItemStatus, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

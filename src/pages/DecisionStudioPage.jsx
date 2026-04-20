@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const decisionsUrl = `${apiBaseUrl}/api/v1/decisions`
+const decisionsPerPage = 10
 
 function normalizeDecisions(payload) {
   if (Array.isArray(payload)) return payload
@@ -21,6 +22,8 @@ export default function DecisionStudioPage() {
   const [decisions, setDecisions] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [createError, setCreateError] = useState('')
@@ -63,7 +66,37 @@ export default function DecisionStudioPage() {
     loadDecisions()
   }, [loadDecisions])
 
-  const hasDecisions = useMemo(() => decisions.length > 0, [decisions])
+  const filteredDecisions = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    if (!search) return decisions
+
+    return decisions.filter((item) => {
+      const haystack = [
+        item.student,
+        item.program,
+        item.readiness,
+        item.reason,
+        String(item.fit),
+        String(item.creditEstimate),
+      ].filter(Boolean).join(' ').toLowerCase()
+
+      return haystack.includes(search)
+    })
+  }, [decisions, query])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, decisions.length])
+
+  const hasDecisions = useMemo(() => filteredDecisions.length > 0, [filteredDecisions])
+  const totalPages = Math.max(1, Math.ceil(filteredDecisions.length / decisionsPerPage))
+  const currentPage = Math.min(page, totalPages)
+  const paginatedDecisions = useMemo(() => {
+    const start = (currentPage - 1) * decisionsPerPage
+    return filteredDecisions.slice(start, start + decisionsPerPage)
+  }, [currentPage, filteredDecisions])
+  const pageStart = filteredDecisions.length ? (currentPage - 1) * decisionsPerPage + 1 : 0
+  const pageEnd = Math.min(currentPage * decisionsPerPage, filteredDecisions.length)
 
   function openCreateModal() {
     setCreateError('')
@@ -199,51 +232,84 @@ export default function DecisionStudioPage() {
           <div className="panel-header">
             <div>
               <h3>Decision workbench</h3>
-              <p>Examples of how staff should review and release outcomes.</p>
+              <p>Search and page through packet summaries, then open a decision for the full review surface.</p>
             </div>
           </div>
+          <div className="toolbar-row">
+            <input
+              className="filter-input"
+              placeholder="Search by student, program, readiness, rationale, fit, or credit estimate"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
           {hasDecisions ? (
-            <div className="table-wrap">
-              <table className="clickable-table">
-                <thead>
-                  <tr>
-                    <th>Student</th>
-                    <th>Program</th>
-                    <th>Fit</th>
-                    <th>Credit estimate</th>
-                    <th>Readiness</th>
-                    <th>Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {decisions.map((item) => (
-                    <tr
-                      key={item.id || item.student}
-                      className="clickable-row"
-                      onClick={() => item.id && navigate(`/decision-studio/${item.id}`)}
-                      onKeyDown={(event) => {
-                        if (!item.id) return
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          navigate(`/decision-studio/${item.id}`)
-                        }
-                      }}
-                      tabIndex={item.id ? 0 : -1}
-                      role={item.id ? 'button' : undefined}
-                    >
-                      <td><strong>{item.student}</strong></td>
-                      <td>{item.program}</td>
-                      <td>{item.fit}%</td>
-                      <td>{item.creditEstimate}</td>
-                      <td><span className="badge neutral-badge">{item.readiness}</span></td>
-                      <td>{item.reason}</td>
+            <>
+              <div className="list-pagination-bar">
+                <p className="muted-copy">Showing {pageStart}-{pageEnd} of {filteredDecisions.length} decision packets</p>
+                <div className="pagination-controls">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Previous
+                  </button>
+                  <span className="pagination-status">Page {currentPage} of {totalPages}</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              <div className="table-wrap">
+                <table className="clickable-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Program</th>
+                      <th>Fit</th>
+                      <th>Credit estimate</th>
+                      <th>Readiness</th>
+                      <th>Reason</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {paginatedDecisions.map((item) => (
+                      <tr
+                        key={item.id || item.student}
+                        className="clickable-row"
+                        onClick={() => item.id && navigate(`/decision-studio/${item.id}`)}
+                        onKeyDown={(event) => {
+                          if (!item.id) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            navigate(`/decision-studio/${item.id}`)
+                          }
+                        }}
+                        tabIndex={item.id ? 0 : -1}
+                        role={item.id ? 'button' : undefined}
+                      >
+                        <td><strong>{item.student}</strong></td>
+                        <td>{item.program}</td>
+                        <td>{item.fit}%</td>
+                        <td>{item.creditEstimate}</td>
+                        <td><span className="badge neutral-badge">{item.readiness}</span></td>
+                        <td>{item.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : (
-            <p className="muted-copy">No decision packets are available yet.</p>
+            <p className="muted-copy">No decision packets match that search.</p>
           )}
         </section>
       ) : null}

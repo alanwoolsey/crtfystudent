@@ -1,11 +1,14 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { canAccess, hasAnyPermission, hasAnyRole, hasSensitivityTier } from '../lib/rbac'
 
 const AuthContext = createContext(null)
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const loginUrl = `${apiBaseUrl}/api/auth/login`
 const completeNewPasswordUrl = `${apiBaseUrl}/api/auth/complete-new-password`
 const changePasswordUrl = `${apiBaseUrl}/api/auth/change-password`
+const currentUserUrl = `${apiBaseUrl}/api/v1/me`
 const storageKey = 'crtfy-student-auth'
+const storageVersion = 2
 const authRetryDelayMs = 500
 
 function sleep(ms) {
@@ -13,25 +16,30 @@ function sleep(ms) {
 }
 
 function readStoredAuth() {
-  if (typeof window === 'undefined') return { session: null, pendingChallenge: null }
+  if (typeof window === 'undefined') return { session: null, pendingChallenge: null, currentUser: null }
 
   try {
     const raw = window.localStorage.getItem(storageKey)
-    if (!raw) return { session: null, pendingChallenge: null }
+    if (!raw) return { session: null, pendingChallenge: null, currentUser: null }
     const parsed = JSON.parse(raw)
+    if (parsed.version !== storageVersion) {
+      window.localStorage.removeItem(storageKey)
+      return { session: null, pendingChallenge: null, currentUser: null }
+    }
     return {
       session: parsed.session || null,
       pendingChallenge: parsed.pendingChallenge || null,
+      currentUser: parsed.currentUser || null,
     }
   } catch {
-    return { session: null, pendingChallenge: null }
+    return { session: null, pendingChallenge: null, currentUser: null }
   }
 }
 
-function persistAuthState(session, pendingChallenge) {
+function persistAuthState(session, pendingChallenge, currentUser) {
   if (typeof window === 'undefined') return
 
-  const payload = JSON.stringify({ session, pendingChallenge })
+  const payload = JSON.stringify({ version: storageVersion, session, pendingChallenge, currentUser })
   window.localStorage.setItem(storageKey, payload)
 }
 
@@ -79,11 +87,14 @@ export function AuthProvider({ children }) {
   const stored = readStoredAuth()
   const [session, setSession] = useState(stored.session)
   const [pendingChallenge, setPendingChallenge] = useState(stored.pendingChallenge)
+  const [currentUser, setCurrentUser] = useState(stored.currentUser)
+  const [isBootstrappingAuth, setIsBootstrappingAuth] = useState(Boolean(stored.session))
 
-  const applyAuthState = useCallback((nextSession, nextChallenge) => {
+  const applyAuthState = useCallback((nextSession, nextChallenge, nextCurrentUser = null) => {
     setSession(nextSession)
     setPendingChallenge(nextChallenge)
-    persistAuthState(nextSession, nextChallenge)
+    setCurrentUser(nextCurrentUser)
+    persistAuthState(nextSession, nextChallenge, nextCurrentUser)
   }, [])
 
   const login = useCallback(async ({ username, password }) => {
@@ -105,12 +116,12 @@ export function AuthProvider({ children }) {
         tenant_code: payload.tenant_code,
         challenge_name: payload.challenge_name,
       }
-      applyAuthState(null, challenge)
+      applyAuthState(null, challenge, null)
       return { challengeRequired: true, challenge }
     }
 
     const nextSession = normalizeSession(payload, username)
-    applyAuthState(nextSession, null)
+    applyAuthState(nextSession, null, null)
     return { challengeRequired: false, session: nextSession }
   }, [applyAuthState])
 
@@ -132,7 +143,7 @@ export function AuthProvider({ children }) {
     if (!response.ok) throw new Error(getAuthErrorMessage(response.status, payload))
 
     const nextSession = normalizeSession(payload, username)
-    applyAuthState(nextSession, null)
+    applyAuthState(nextSession, null, null)
     return nextSession
   }, [applyAuthState, pendingChallenge])
 
@@ -182,20 +193,75 @@ export function AuthProvider({ children }) {
   }, [session])
 
   const logout = useCallback(() => {
-    applyAuthState(null, null)
+    applyAuthState(null, null, null)
   }, [applyAuthState])
+
+  const loadCurrentUser = useCallback(async () => {
+    if (!session?.access_token || !session?.tenant_id) {
+      setCurrentUser(null)
+      setIsBootstrappingAuth(false)
+      return null
+    }
+
+    setIsBootstrappingAuth(true)
+
+    try {
+      const response = await fetch(currentUserUrl, {
+        headers: {
+          ...buildTenantAuthHeaders(session),
+        },
+      })
+      const payload = await parseResponse(response)
+
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || 'Unable to load current user.')
+      }
+
+      setCurrentUser(payload)
+      persistAuthState(session, pendingChallenge, payload)
+      return payload
+    } catch (error) {
+      console.error('Failed to load current user from /api/v1/me', {
+        error: error?.message || error,
+        tenantId: session?.tenant_id,
+        username: session?.username,
+      })
+      setCurrentUser(null)
+      persistAuthState(session, pendingChallenge, null)
+      return null
+    } finally {
+      setIsBootstrappingAuth(false)
+    }
+  }, [pendingChallenge, session])
+
+  useEffect(() => {
+    if (!session?.access_token || !session?.tenant_id) {
+      setCurrentUser(null)
+      setIsBootstrappingAuth(false)
+      return
+    }
+
+    loadCurrentUser()
+  }, [loadCurrentUser, session])
 
   const value = useMemo(() => ({
     session,
+    currentUser,
     pendingChallenge,
     isAuthenticated: Boolean(session?.access_token),
+    isBootstrappingAuth,
     login,
     completeNewPassword,
     changePassword,
     buildTenantAuthHeaders,
     fetchWithTenantAuth,
+    loadCurrentUser,
+    canAccess: (access) => canAccess(currentUser, access),
+    hasAnyRole: (roles) => hasAnyRole(currentUser, roles),
+    hasAnyPermission: (permissions) => hasAnyPermission(currentUser, permissions),
+    hasSensitivityTier: (tier) => hasSensitivityTier(currentUser, tier),
     logout,
-  }), [changePassword, completeNewPassword, fetchWithTenantAuth, login, logout, pendingChallenge, session])
+  }), [changePassword, completeNewPassword, currentUser, fetchWithTenantAuth, isBootstrappingAuth, loadCurrentUser, login, logout, pendingChallenge, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

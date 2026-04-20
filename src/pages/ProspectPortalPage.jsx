@@ -6,7 +6,7 @@ export default function ProspectPortalPage() {
     <div className="page-wrap">
       <SectionHeader
         eyebrow="Student-facing experience"
-        title="Prospect Portal that converts"
+        title="Prospect Portal"
         subtitle="This is where crtfy Student beats traditional CRMs: a transcript-led front door that gives value before the application starts."
         actions={<button className="primary-button">Preview microsite</button>}
       />

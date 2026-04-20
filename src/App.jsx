@@ -1,24 +1,33 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
+  AlertCircle,
+  BarChart3,
+  BadgeCheck,
   Bell,
   Cable,
+  ChevronDown,
   ChevronRight,
-  Compass,
+  ClipboardList,
   FileCheck2,
+  FileClock,
   GraduationCap,
   LayoutDashboard,
+  Landmark,
   LoaderCircle,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
+  TrendingUp,
   Upload,
   UserCircle2,
   X,
 } from 'lucide-react'
 import AuthScreen from './components/AuthScreen'
+import ProtectedRoute from './components/ProtectedRoute'
 import { useAuth } from './context/AuthContext'
-import DashboardPage from './pages/DashboardPage'
+import TodaysWorkPage from './pages/TodaysWorkPage'
 import StudentsPage from './pages/StudentsPage'
 import StudentProfilePage from './pages/StudentProfilePage'
 import QueuePage from './pages/QueuePage'
@@ -27,8 +36,17 @@ import ConnectorsPage from './pages/ConnectorsPage'
 import ProspectPortalPage from './pages/ProspectPortalPage'
 import DecisionStudioPage from './pages/DecisionStudioPage'
 import DecisionStudioDetailPage from './pages/DecisionStudioDetailPage'
-import { quickSignals } from './data/mockData'
+import UserProfilePage from './pages/UserProfilePage'
+import ExceptionsPage from './pages/ExceptionsPage'
+import IncompletePage from './pages/IncompletePage'
+import ReadyForReviewPage from './pages/ReadyForReviewPage'
+import AdmittedYieldPage from './pages/AdmittedYieldPage'
+import DepositMeltPage from './pages/DepositMeltPage'
+import ReportingPage from './pages/ReportingPage'
+import AdminPage from './pages/AdminPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
+import { buildWorkItemsFromStudents, buildWorkSummary } from './lib/studentWorkflow'
+import { ROLE_KEYS } from './lib/rbac'
 
 const idleUploadState = {
   state: 'idle',
@@ -42,13 +60,78 @@ const idleUploadState = {
 }
 
 const navItems = [
-  { to: '/', label: 'Command Center', icon: LayoutDashboard },
-  { to: '/prospects', label: 'Prospect Portal', icon: Sparkles },
-  { to: '/students', label: 'Student 360', icon: GraduationCap },
-  { to: '/decisions', label: 'Decision Studio', icon: FileCheck2 },
-  { to: '/queue', label: 'Workflows', icon: Compass },
-  { to: '/trust', label: 'Trust Center', icon: ShieldCheck },
-  { to: '/connectors', label: 'Crtfy Integrations', icon: Cable },
+  {
+    to: '/',
+    label: "Today's Work",
+    icon: LayoutDashboard,
+    anyAccess: [{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }],
+  },
+  {
+    to: '/prospects',
+    label: 'Prospect Portal',
+    icon: Sparkles,
+    anyAccess: [{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }],
+  },
+  {
+    to: '/students',
+    label: 'Student 360',
+    icon: GraduationCap,
+    access: { permissions: ['view_student_360'] },
+  },
+  {
+    to: '/incomplete',
+    label: 'Incomplete Applications',
+    icon: ClipboardList,
+    access: { permissions: ['view_student_360'] },
+  },
+  {
+    to: '/ready-for-review',
+    label: 'Ready for Review',
+    icon: FileClock,
+    anyAccess: [{ permissions: ['view_decision_packet'] }, { permissions: ['view_student_360'], sensitivities: ['academic_record'] }],
+  },
+  {
+    to: '/decisions',
+    label: 'Decision Studio',
+    icon: FileCheck2,
+    anyAccess: [{ permissions: ['view_decision_packet'] }, { permissions: ['release_decision'] }],
+  },
+  {
+    to: '/trust',
+    label: 'Trust Center',
+    icon: ShieldCheck,
+    anyAccess: [{ permissions: ['manage_trust_cases'] }, { permissions: ['view_trust_flags'] }],
+  },
+  {
+    to: '/yield',
+    label: 'Admitted / Yield',
+    icon: TrendingUp,
+    anyAccess: [{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }],
+  },
+  {
+    to: '/melt',
+    label: 'Deposit / Melt',
+    icon: BadgeCheck,
+    anyAccess: [{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }],
+  },
+  {
+    to: '/connectors',
+    label: 'Integrations',
+    icon: Cable,
+    access: { permissions: ['manage_integrations'] },
+  },
+  {
+    to: '/reporting',
+    label: 'Reporting',
+    icon: BarChart3,
+    access: { permissions: ['view_dashboards'] },
+  },
+  {
+    to: '/admin',
+    label: 'Admin',
+    icon: Settings,
+    anyAccess: [{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }],
+  },
 ]
 
 function formatUploadTimestamp(value) {
@@ -67,11 +150,14 @@ export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const fileInputRef = useRef(null)
-  const { uploadTranscript } = useStudentRecords()
-  const { session, isAuthenticated, changePassword, logout } = useAuth()
+  const userMenuRef = useRef(null)
+  const { students, uploadTranscript } = useStudentRecords()
+  const { session, currentUser, isAuthenticated, isBootstrappingAuth, changePassword, logout, canAccess } = useAuth()
   const [uploadState, setUploadState] = useState(idleUploadState)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false)
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [topbarQuery, setTopbarQuery] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [passwordSuccess, setPasswordSuccess] = useState('')
   const [isChangingPassword, setIsChangingPassword] = useState(false)
@@ -84,10 +170,68 @@ export default function App() {
     if (match) return match.label
     if (location.pathname.startsWith('/students/')) return 'Student 360'
     if (location.pathname.startsWith('/decision-studio/')) return 'Decision Studio'
-    return 'Command Center'
+    if (location.pathname.startsWith('/incomplete')) return 'Incomplete'
+    if (location.pathname.startsWith('/ready-for-review')) return 'Ready for Review'
+    if (location.pathname.startsWith('/exceptions')) return 'Exceptions'
+    if (location.pathname.startsWith('/yield')) return 'Admitted / Yield'
+    if (location.pathname.startsWith('/melt')) return 'Deposit / Melt'
+    if (location.pathname.startsWith('/reporting')) return 'Reporting'
+    if (location.pathname.startsWith('/admin')) return 'Admin'
+    if (location.pathname.startsWith('/profile')) return 'User Profile'
+    if (location.pathname.startsWith('/prospects')) return 'Prospect Portal'
+    return "Today's Work"
   }, [location.pathname])
 
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => item.anyAccess ? item.anyAccess.some((access) => canAccess(access)) : canAccess(item.access)),
+    [canAccess],
+  )
+
+  const topbarSignals = useMemo(() => {
+    const summary = buildWorkSummary(buildWorkItemsFromStudents(students))
+    return [
+      { label: 'Needs attention', value: summary.needsAttention, tone: 'rose' },
+      { label: 'Ready for decision', value: summary.readyForDecision, tone: 'teal' },
+      { label: 'Close to complete', value: summary.closeToCompletion, tone: 'amber' },
+      { label: 'Exceptions', value: summary.exceptions, tone: 'indigo' },
+    ]
+  }, [students])
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    setTopbarQuery(params.get('q') || '')
+  }, [location.search])
+
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (!userMenuRef.current?.contains(event.target)) {
+        setIsUserMenuOpen(false)
+      }
+    }
+
+    if (isUserMenuOpen) {
+      document.addEventListener('mousedown', handleOutsideClick)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+    }
+  }, [isUserMenuOpen])
+
   if (!isAuthenticated) return <AuthScreen />
+  if (isBootstrappingAuth) {
+    return (
+      <div className="app-shell">
+        <main className="main-panel">
+          <div className="page-wrap">
+            <section className="panel">
+              <p className="muted-copy">Loading access...</p>
+            </section>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
   const isUploadInFlight = uploadState.state === 'uploading' || uploadState.state === 'processing'
   const showBatchBackgroundStatus = !isUploadModalOpen && uploadState.mode === 'batch' && isUploadInFlight
@@ -209,6 +353,7 @@ export default function App() {
     setPasswordError('')
     setPasswordSuccess('')
     setIsChangePasswordOpen(true)
+    setIsUserMenuOpen(false)
   }
 
   function closeChangePasswordModal() {
@@ -218,6 +363,33 @@ export default function App() {
     setPreviousPassword('')
     setProposedPassword('')
     setConfirmPassword('')
+  }
+
+  function openUserProfile() {
+    setIsUserMenuOpen(false)
+    navigate('/profile')
+  }
+
+  function handleSignOut() {
+    setIsUserMenuOpen(false)
+    logout()
+  }
+
+  function handleTopbarSearchChange(event) {
+    const nextQuery = event.target.value
+    setTopbarQuery(nextQuery)
+
+    const params = new URLSearchParams(location.search)
+    if (nextQuery.trim()) {
+      params.set('q', nextQuery)
+    } else {
+      params.delete('q')
+    }
+
+    const searchableRoutes = ['/', '/prospects', '/students', '/queue', '/exceptions']
+    const targetPath = searchableRoutes.includes(location.pathname) ? location.pathname : '/students'
+    const nextSearch = params.toString()
+    navigate(`${targetPath}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true })
   }
 
   return (
@@ -236,13 +408,17 @@ export default function App() {
             </div>
             <div className="search-wrap">
               <Search size={18} />
-              <input placeholder="Search student, transcript, institution, program, connector, or alert" />
+              <input
+                placeholder="Search student, transcript, institution, program, connector, or alert"
+                value={topbarQuery}
+                onChange={handleTopbarSearchChange}
+              />
             </div>
           </div>
 
           <div className="topbar-actions">
             <div className="signal-strip">
-              {quickSignals.map((signal) => (
+              {topbarSignals.map((signal) => (
                 <span key={signal.label} className={`signal-pill ${signal.tone}`}>
                   {signal.label}: <strong>{signal.value}</strong>
                 </span>
@@ -269,17 +445,35 @@ export default function App() {
               </button>
             ) : null}
             <button className="icon-button" aria-label="Notifications"><Bell size={18} /></button>
-            <button type="button" className="secondary-button" onClick={openChangePasswordModal}>
-              Change password
-            </button>
-            <div className="user-pill">
-              <UserCircle2 size={18} />
-              <div>
-                <strong>{session.username}</strong>
-                <span>{session.tenant_name}</span>
-              </div>
+            <div className="user-menu-wrap" ref={userMenuRef}>
+              <button
+                type="button"
+                className={`user-pill user-menu-trigger ${isUserMenuOpen ? 'active' : ''}`}
+                onClick={() => setIsUserMenuOpen((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={isUserMenuOpen}
+              >
+                <UserCircle2 size={18} />
+                <div>
+                  <strong>{currentUser?.displayName || session.username}</strong>
+                </div>
+                <ChevronDown size={16} />
+              </button>
+
+              {isUserMenuOpen ? (
+                <div className="user-menu-dropdown" role="menu">
+                  <button type="button" className="user-menu-item" onClick={openUserProfile} role="menuitem">
+                    User Profile
+                  </button>
+                  <button type="button" className="user-menu-item" onClick={openChangePasswordModal} role="menuitem">
+                    Change password
+                  </button>
+                  <button type="button" className="user-menu-item danger" onClick={handleSignOut} role="menuitem">
+                    Sign out
+                  </button>
+                </div>
+              ) : null}
             </div>
-            <button type="button" className="secondary-button" onClick={logout}>Sign out</button>
           </div>
         </div>
       </header>
@@ -288,7 +482,7 @@ export default function App() {
         <div className="sidebar-section">
           <p className="eyebrow">Platform</p>
           <nav className="nav-list">
-            {navItems.map(({ to, label, icon: Icon }) => (
+            {visibleNavItems.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
                 <Icon size={18} />
                 <span>{label}</span>
@@ -300,15 +494,23 @@ export default function App() {
 
       <main className="main-panel">
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/prospects" element={<ProspectPortalPage />} />
-          <Route path="/students" element={<StudentsPage />} />
-          <Route path="/students/:studentId" element={<StudentProfilePage />} />
-          <Route path="/decisions" element={<DecisionStudioPage />} />
-          <Route path="/decision-studio/:decisionId" element={<DecisionStudioDetailPage />} />
-          <Route path="/queue" element={<QueuePage />} />
-          <Route path="/trust" element={<TrustCenterPage />} />
-          <Route path="/connectors" element={<ConnectorsPage />} />
+          <Route path="/" element={<ProtectedRoute anyAccess={[{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }]}><TodaysWorkPage /></ProtectedRoute>} />
+          <Route path="/prospects" element={<ProtectedRoute anyAccess={[{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }]}><ProspectPortalPage /></ProtectedRoute>} />
+          <Route path="/students" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><StudentsPage /></ProtectedRoute>} />
+          <Route path="/students/:studentId" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><StudentProfilePage /></ProtectedRoute>} />
+          <Route path="/incomplete" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><IncompletePage /></ProtectedRoute>} />
+          <Route path="/ready-for-review" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['view_student_360'], sensitivities: ['academic_record'] }]}><ReadyForReviewPage /></ProtectedRoute>} />
+          <Route path="/decisions" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['release_decision'] }]}><DecisionStudioPage /></ProtectedRoute>} />
+          <Route path="/decision-studio/:decisionId" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['release_decision'] }]}><DecisionStudioDetailPage /></ProtectedRoute>} />
+          <Route path="/queue" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><QueuePage /></ProtectedRoute>} />
+          <Route path="/exceptions" element={<ProtectedRoute anyAccess={[{ permissions: ['manage_trust_cases'] }, { permissions: ['view_trust_flags'] }]}><ExceptionsPage /></ProtectedRoute>} />
+          <Route path="/trust" element={<ProtectedRoute anyAccess={[{ permissions: ['manage_trust_cases'] }, { permissions: ['view_trust_flags'] }]}><TrustCenterPage /></ProtectedRoute>} />
+          <Route path="/yield" element={<ProtectedRoute anyAccess={[{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }]}><AdmittedYieldPage /></ProtectedRoute>} />
+          <Route path="/melt" element={<ProtectedRoute anyAccess={[{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }]}><DepositMeltPage /></ProtectedRoute>} />
+          <Route path="/connectors" element={<ProtectedRoute access={{ permissions: ['manage_integrations'] }}><ConnectorsPage /></ProtectedRoute>} />
+          <Route path="/reporting" element={<ProtectedRoute access={{ permissions: ['view_dashboards'] }}><ReportingPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute anyAccess={[{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }]}><AdminPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute access={{ roles: [...ROLE_KEYS.counselor, ...ROLE_KEYS.processor, ...ROLE_KEYS.reviewer, ...ROLE_KEYS.director, ...ROLE_KEYS.trustAnalyst, ...ROLE_KEYS.registrarTransfer, ...ROLE_KEYS.financialAid, ...ROLE_KEYS.readOnly, ...ROLE_KEYS.integrationService] }}><UserProfilePage /></ProtectedRoute>} />
         </Routes>
       </main>
 
