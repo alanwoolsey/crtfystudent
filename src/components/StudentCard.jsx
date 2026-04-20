@@ -5,6 +5,17 @@ import ReadinessChip from './ReadinessChip'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { useAuth } from '../context/AuthContext'
 
+function getDisplayValue(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (typeof value === 'object') {
+    if (typeof value.name === 'string') return value.name
+    if (typeof value.label === 'string') return value.label
+    if (typeof value.title === 'string') return value.title
+  }
+  return fallback || 'Unknown'
+}
+
 export default function StudentCard({ student }) {
   const { hasSensitivityTier, hasAnyPermission } = useAuth()
   const nextBestAction = student.recommendation?.nextBestAction || student.nextBestAction || 'Review'
@@ -13,19 +24,23 @@ export default function StudentCard({ student }) {
   const readiness = getReadiness(student)
   const showAcademic = hasSensitivityTier('academic_record')
   const canOpenStudent = hasAnyPermission(['view_student_360'])
+  const programLabel = getDisplayValue(student.program, 'Program pending')
+  const institutionGoalLabel = getDisplayValue(student.institutionGoal, '')
+  const riskLabel = getDisplayValue(student.risk, 'Low')
+  const stageLabel = getDisplayValue(student.stage, 'Unknown')
 
   const content = (
     <Link to={`/students/${student.id}`} className="student-card">
       <div className="student-card-top">
         <div>
           <h3>{student.name}</h3>
-          <p>{student.program} · {student.institutionGoal}</p>
+          <p>{programLabel}{institutionGoalLabel ? ` • ${institutionGoalLabel}` : ''}</p>
         </div>
         <ArrowUpRight size={18} />
       </div>
 
       <div className="pill-row compact">
-        <span className={`badge risk-${student.risk.toLowerCase()}`}>{student.stage}</span>
+        <span className={`badge risk-${riskLabel.toLowerCase()}`}>{stageLabel}</span>
         <ReadinessChip readiness={readiness} />
         {showAcademic ? <span className="tag">{student.fitScore}% fit</span> : null}
         <span className="tag">{student.depositLikelihood}% deposit</span>
@@ -60,7 +75,7 @@ export default function StudentCard({ student }) {
 
       <div className="card-footer-row">
         <span><Sparkles size={14} /> Next: {nextBestAction}</span>
-        <span><ShieldCheck size={14} /> {student.risk} risk</span>
+        <span><ShieldCheck size={14} /> {riskLabel} risk</span>
       </div>
     </Link>
   )

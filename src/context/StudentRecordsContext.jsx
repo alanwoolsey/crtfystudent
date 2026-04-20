@@ -50,6 +50,36 @@ function normalizeChecklistPayload(payload) {
   return []
 }
 
+function normalizeStudentValue(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (typeof value === 'object') {
+    if (typeof value.name === 'string') return value.name
+    if (typeof value.label === 'string') return value.label
+    if (typeof value.title === 'string') return value.title
+  }
+  return fallback
+}
+
+function normalizeStudentsPayload(payload) {
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.students)
+        ? payload.students
+        : []
+
+  return items.map((student) => ({
+    ...student,
+    program: normalizeStudentValue(student?.program, 'Program pending'),
+    institutionGoal: normalizeStudentValue(student?.institutionGoal, ''),
+    advisor: normalizeStudentValue(student?.advisor, 'Unassigned'),
+    risk: normalizeStudentValue(student?.risk, 'Low'),
+    stage: normalizeStudentValue(student?.stage, 'Unknown'),
+  }))
+}
+
 function buildTranscriptSteps(audit = []) {
   if (!audit.length) {
     return [
@@ -271,7 +301,7 @@ export function StudentRecordsProvider({ children }) {
 
       if (!response.ok) throw new Error(getStudentsErrorMessage(response, payload))
 
-      const nextStudents = Array.isArray(payload) ? payload : []
+      const nextStudents = normalizeStudentsPayload(payload)
       setStudents(nextStudents)
       return nextStudents
     } catch (error) {

@@ -12,6 +12,17 @@ const quickFilters = [
   { key: 'need-evidence', label: 'Need evidence' },
 ]
 
+function getDisplayValue(value, fallback = '') {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (typeof value === 'object') {
+    if (typeof value.name === 'string') return value.name
+    if (typeof value.label === 'string') return value.label
+    if (typeof value.title === 'string') return value.title
+  }
+  return fallback
+}
+
 export default function StudentsPage() {
   const { students, isLoadingStudents, studentsError, loadStudents } = useStudentRecords()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -55,10 +66,10 @@ export default function StudentsPage() {
     return quickFilteredStudents.filter((student) => {
       const haystack = [
         student.name,
-        student.program,
-        student.advisor,
-        student.institutionGoal,
-        student.risk,
+        getDisplayValue(student.program),
+        getDisplayValue(student.advisor),
+        getDisplayValue(student.institutionGoal),
+        getDisplayValue(student.risk),
         String(student.fitScore),
         student.nextBestAction,
       ].filter(Boolean).join(' ').toLowerCase()
