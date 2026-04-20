@@ -30,7 +30,7 @@ import { useAuth } from './context/AuthContext'
 import TodaysWorkPage from './pages/TodaysWorkPage'
 import StudentsPage from './pages/StudentsPage'
 import StudentProfilePage from './pages/StudentProfilePage'
-import QueuePage from './pages/QueuePage'
+import DocumentsQueuePage from './pages/DocumentsQueuePage'
 import TrustCenterPage from './pages/TrustCenterPage'
 import ConnectorsPage from './pages/ConnectorsPage'
 import ProspectPortalPage from './pages/ProspectPortalPage'
@@ -45,7 +45,6 @@ import DepositMeltPage from './pages/DepositMeltPage'
 import ReportingPage from './pages/ReportingPage'
 import AdminPage from './pages/AdminPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
-import { buildWorkItemsFromStudents, buildWorkSummary } from './lib/studentWorkflow'
 import { ROLE_KEYS } from './lib/rbac'
 
 const idleUploadState = {
@@ -83,6 +82,12 @@ const navItems = [
     label: 'Incomplete Applications',
     icon: ClipboardList,
     access: { permissions: ['view_student_360'] },
+  },
+  {
+    to: '/documents',
+    label: 'Documents Queue',
+    icon: AlertCircle,
+    anyAccess: [{ permissions: ['view_sensitive_docs'] }, { permissions: ['manage_trust_cases'] }, { permissions: ['view_student_360'] }],
   },
   {
     to: '/ready-for-review',
@@ -169,6 +174,7 @@ export default function App() {
     const match = navItems.find((item) => item.to === location.pathname)
     if (match) return match.label
     if (location.pathname.startsWith('/students/')) return 'Student 360'
+    if (location.pathname.startsWith('/documents')) return 'Documents Queue'
     if (location.pathname.startsWith('/decision-studio/')) return 'Decision Studio'
     if (location.pathname.startsWith('/incomplete')) return 'Incomplete'
     if (location.pathname.startsWith('/ready-for-review')) return 'Ready for Review'
@@ -186,16 +192,6 @@ export default function App() {
     () => navItems.filter((item) => item.anyAccess ? item.anyAccess.some((access) => canAccess(access)) : canAccess(item.access)),
     [canAccess],
   )
-
-  const topbarSignals = useMemo(() => {
-    const summary = buildWorkSummary(buildWorkItemsFromStudents(students))
-    return [
-      { label: 'Needs attention', value: summary.needsAttention, tone: 'rose' },
-      { label: 'Ready for decision', value: summary.readyForDecision, tone: 'teal' },
-      { label: 'Close to complete', value: summary.closeToCompletion, tone: 'amber' },
-      { label: 'Exceptions', value: summary.exceptions, tone: 'indigo' },
-    ]
-  }, [students])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -386,7 +382,7 @@ export default function App() {
       params.delete('q')
     }
 
-    const searchableRoutes = ['/', '/prospects', '/students', '/queue', '/exceptions']
+    const searchableRoutes = ['/', '/prospects', '/students', '/documents', '/queue', '/exceptions']
     const targetPath = searchableRoutes.includes(location.pathname) ? location.pathname : '/students'
     const nextSearch = params.toString()
     navigate(`${targetPath}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true })
@@ -417,13 +413,6 @@ export default function App() {
           </div>
 
           <div className="topbar-actions">
-            <div className="signal-strip">
-              {topbarSignals.map((signal) => (
-                <span key={signal.label} className={`signal-pill ${signal.tone}`}>
-                  {signal.label}: <strong>{signal.value}</strong>
-                </span>
-              ))}
-            </div>
             <div className="upload-action">
               <input ref={fileInputRef} type="file" className="file-input-hidden" onChange={handleFileChange} />
               <button
@@ -499,10 +488,11 @@ export default function App() {
           <Route path="/students" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><StudentsPage /></ProtectedRoute>} />
           <Route path="/students/:studentId" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><StudentProfilePage /></ProtectedRoute>} />
           <Route path="/incomplete" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><IncompletePage /></ProtectedRoute>} />
+          <Route path="/documents" element={<ProtectedRoute anyAccess={[{ permissions: ['view_sensitive_docs'] }, { permissions: ['manage_trust_cases'] }, { permissions: ['view_student_360'] }]}><DocumentsQueuePage /></ProtectedRoute>} />
           <Route path="/ready-for-review" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['view_student_360'], sensitivities: ['academic_record'] }]}><ReadyForReviewPage /></ProtectedRoute>} />
           <Route path="/decisions" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['release_decision'] }]}><DecisionStudioPage /></ProtectedRoute>} />
           <Route path="/decision-studio/:decisionId" element={<ProtectedRoute anyAccess={[{ permissions: ['view_decision_packet'] }, { permissions: ['release_decision'] }]}><DecisionStudioDetailPage /></ProtectedRoute>} />
-          <Route path="/queue" element={<ProtectedRoute access={{ permissions: ['view_student_360'] }}><QueuePage /></ProtectedRoute>} />
+          <Route path="/queue" element={<ProtectedRoute anyAccess={[{ permissions: ['view_sensitive_docs'] }, { permissions: ['manage_trust_cases'] }, { permissions: ['view_student_360'] }]}><DocumentsQueuePage /></ProtectedRoute>} />
           <Route path="/exceptions" element={<ProtectedRoute anyAccess={[{ permissions: ['manage_trust_cases'] }, { permissions: ['view_trust_flags'] }]}><ExceptionsPage /></ProtectedRoute>} />
           <Route path="/trust" element={<ProtectedRoute anyAccess={[{ permissions: ['manage_trust_cases'] }, { permissions: ['view_trust_flags'] }]}><TrustCenterPage /></ProtectedRoute>} />
           <Route path="/yield" element={<ProtectedRoute anyAccess={[{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }]}><AdmittedYieldPage /></ProtectedRoute>} />

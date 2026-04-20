@@ -2,6 +2,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').rep
 
 export const incompleteQueueUrl = `${apiBaseUrl}/api/v1/incomplete`
 export const reviewReadyUrl = `${apiBaseUrl}/api/v1/review-ready`
+export const documentsQueueUrl = `${apiBaseUrl}/api/v1/documents/queue`
 export const yieldQueueUrl = `${apiBaseUrl}/api/v1/yield`
 export const meltQueueUrl = `${apiBaseUrl}/api/v1/melt`
 export const reportingOverviewUrl = `${apiBaseUrl}/api/v1/reporting/overview`
@@ -135,5 +136,25 @@ export function toMeltCard(item) {
     lastOutreachAt: item?.lastOutreachAt || null,
     owner: item?.owner || { id: 'unassigned', name: 'Unassigned' },
     program: item?.program || 'Program pending',
+  }
+}
+
+export function getDocumentActionUrl(documentId, action) {
+  return `${apiBaseUrl}/api/v1/documents/${documentId}/${action}`
+}
+
+export function toDocumentQueueItem(item) {
+  return {
+    id: item?.id || item?.documentId,
+    documentType: item?.documentType || item?.type || 'Document',
+    studentMatch: item?.studentMatch || {
+      studentId: item?.studentId || null,
+      studentName: item?.studentName || 'Unmatched',
+    },
+    confidence: Number(item?.confidence) || 0,
+    uploadSource: item?.uploadSource || item?.source || 'Unknown source',
+    status: item?.status || 'received_not_indexed',
+    trustFlag: Boolean(item?.trustFlag),
+    receivedAt: item?.receivedAt || item?.uploadedAt || null,
   }
 }

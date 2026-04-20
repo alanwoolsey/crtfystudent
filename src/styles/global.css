@@ -107,7 +107,12 @@ button { cursor: pointer; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px;
-  align-items: center;
+  align-items: end;
+}
+.topbar-main > div:first-child {
+  display: grid;
+  gap: 0;
+  align-content: end;
 }
 .breadcrumbs {
   display: flex;
@@ -161,6 +166,7 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   gap: 10px;
+  width: min(760px, 52vw);
   border: 1px solid var(--border);
   padding: 14px 16px;
   background: rgba(255,255,255,0.75);
@@ -173,7 +179,7 @@ button { cursor: pointer; }
   outline: none;
   background: transparent;
 }
-.topbar-actions { display: flex; align-items: center; gap: 12px; }
+.topbar-actions { display: flex; align-items: end; gap: 12px; }
 .upload-status-chip {
   border: 1px solid var(--border);
   background: var(--panel-solid);
@@ -566,6 +572,31 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .work-item-actions .primary-button {
   justify-content: center;
 }
+.documents-queue-list {
+  display: grid;
+  gap: 14px;
+}
+.documents-queue-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.82);
+}
+.documents-queue-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+.documents-queue-top h3 {
+  margin: 0 0 6px;
+}
+.documents-queue-top p {
+  margin: 0;
+  color: var(--muted);
+}
 .queue-inline-action {
   margin-top: 10px;
   padding: 10px 14px;
@@ -791,7 +822,7 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   .section-header h1 { font-size: 1.6rem; }
   .stats-grid { grid-template-columns: 1fr; }
   .metric-cluster, .profile-metrics, .detail-grid, .preview-grid, .work-item-meta, .admin-user-meta, .admin-scope-grid, .admin-form-grid, .admin-check-grid { grid-template-columns: 1fr; }
-  .card-footer-row, .panel-header, .student-card-top, .profile-top, .connector-top, .feed-top, .legend-row, .stack-row, .mini-table-row, .mini-table-head, .checklist-progress-top, .work-item-top, .work-item-heading, .work-item-actions, .admin-user-header, .admin-scope-reference-row { flex-direction: column; }
+  .card-footer-row, .panel-header, .student-card-top, .profile-top, .connector-top, .feed-top, .legend-row, .stack-row, .mini-table-row, .mini-table-head, .checklist-progress-top, .work-item-top, .work-item-heading, .work-item-actions, .admin-user-header, .admin-scope-reference-row, .documents-queue-top { flex-direction: column; }
   .auth-card { padding: 22px; }
   .auth-copy h1 { font-size: 1.6rem; }
   .password-actions { justify-content: stretch; }
