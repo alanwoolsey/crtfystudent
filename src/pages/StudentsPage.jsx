@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 
+const studentsPerPage = 8
+
 export default function StudentsPage() {
   const { students, isLoadingStudents, studentsError, loadStudents } = useStudentRecords()
   const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
 
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
@@ -24,6 +27,20 @@ export default function StudentsPage() {
       return haystack.includes(search)
     })
   }, [query, students])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, students.length])
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / studentsPerPage))
+  const currentPage = Math.min(page, totalPages)
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * studentsPerPage
+    return filteredStudents.slice(start, start + studentsPerPage)
+  }, [currentPage, filteredStudents])
+
+  const pageStart = filteredStudents.length ? (currentPage - 1) * studentsPerPage + 1 : 0
+  const pageEnd = Math.min(currentPage * studentsPerPage, filteredStudents.length)
 
   return (
     <div className="page-wrap">
@@ -64,15 +81,42 @@ export default function StudentsPage() {
       ) : null}
 
       {!isLoadingStudents && !studentsError ? (
-        <section className="student-grid">
+        <>
           {filteredStudents.length ? (
-            filteredStudents.map((student) => <StudentCard key={student.id} student={student} />)
+            <>
+              <div className="list-pagination-bar">
+                <p className="muted-copy">Showing {pageStart}-{pageEnd} of {filteredStudents.length} students</p>
+                <div className="pagination-controls">
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Previous
+                  </button>
+                  <span className="pagination-status">Page {currentPage} of {totalPages}</span>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+
+              <section className="student-grid">
+                {paginatedStudents.map((student) => <StudentCard key={student.id} student={student} />)}
+              </section>
+            </>
           ) : (
             <article className="panel">
               <p className="muted-copy">No students match that filter.</p>
             </article>
           )}
-        </section>
+        </>
       ) : null}
     </div>
   )
