@@ -6,6 +6,7 @@ export const documentsQueueUrl = `${apiBaseUrl}/api/v1/documents/queue`
 export const yieldQueueUrl = `${apiBaseUrl}/api/v1/yield`
 export const meltQueueUrl = `${apiBaseUrl}/api/v1/melt`
 export const reportingOverviewUrl = `${apiBaseUrl}/api/v1/reporting/overview`
+export const transcriptUploadsUrl = `${apiBaseUrl}/api/v1/transcripts/uploads`
 
 export function normalizeItems(payload, fallbackKeys = []) {
   if (Array.isArray(payload)) return payload
@@ -20,7 +21,7 @@ export function getApiErrorMessage(response, payload, fallback) {
   if (response.status === 401) return 'Your session is no longer valid. Please sign in again.'
   if (response.status === 403) return 'Your account is not authorized for this tenant.'
   if (response.status === 404) return 'This admissions service is not available yet.'
-  return payload?.detail || payload?.message || fallback
+  return payload?.error || payload?.detail || payload?.message || fallback
 }
 
 function normalizeReadinessState(state) {
@@ -141,6 +142,26 @@ export function toMeltCard(item) {
 
 export function getDocumentActionUrl(documentId, action) {
   return `${apiBaseUrl}/api/v1/documents/${documentId}/${action}`
+}
+
+export function getDocumentReprocessUploadUrl(documentId) {
+  return `${apiBaseUrl}/api/v1/documents/${documentId}/reprocess-upload`
+}
+
+export function getDocumentExceptionSummaryUrl(documentId) {
+  return `${apiBaseUrl}/api/v1/documents/${documentId}/exception-summary`
+}
+
+export function getAgentRunUrl(agentRunId) {
+  return `${apiBaseUrl}/api/v1/agent-runs/${agentRunId}`
+}
+
+export function getAgentRunActionsUrl(agentRunId) {
+  return `${apiBaseUrl}/api/v1/agent-runs/${agentRunId}/actions`
+}
+
+export function getTranscriptUploadStatusUrl(transcriptId) {
+  return `${transcriptUploadsUrl}/${transcriptId}/status`
 }
 
 export function toDocumentQueueItem(item) {
