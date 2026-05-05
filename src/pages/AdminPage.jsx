@@ -2,6 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, RotateCcw, Trash2, UserPlus, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
+import {
+  getWorkProjectionJobCancelUrl,
+  getWorkProjectionJobRetryUrl,
+  getWorkProjectionJobUrl,
+  workProjectionJobsUrl,
+  workProjectionRebuildAllUrl,
+  workProjectionRebuildUrl,
+  workProjectionStatusUrl,
+} from '../lib/operationsApi'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const adminUsersUrl = `${apiBaseUrl}/api/v1/admin/users`
@@ -142,6 +151,37 @@ function getAdminErrorMessage(response, payload, fallback) {
   return payload?.detail || payload?.message || fallback
 }
 
+function normalizeProjectionStatus(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  return {
+    projectedStudents: Number(payload.projectedStudents) || 0,
+    totalStudents: Number(payload.totalStudents) || 0,
+    ready: Boolean(payload.ready),
+    lastProjectedAt: payload.lastProjectedAt || null,
+    remainingStudents: Number(payload.remainingStudents) || 0,
+    nextCursor: payload.nextCursor || null,
+    currentJob: payload.currentJob && typeof payload.currentJob === 'object' ? payload.currentJob : null,
+  }
+}
+
+function normalizeProjectionJob(job) {
+  if (!job || typeof job !== 'object') return null
+  return {
+    jobId: job.jobId || '',
+    status: job.status || 'unknown',
+    resetRequested: Boolean(job.resetRequested),
+    chunkSize: Number(job.chunkSize) || 0,
+    processedStudents: Number(job.processedStudents) || 0,
+    remainingStudents: Number(job.remainingStudents) || 0,
+    nextCursor: job.nextCursor || null,
+    error: job.error || '',
+    startedAt: job.startedAt || null,
+    completedAt: job.completedAt || null,
+    createdAt: job.createdAt || null,
+    updatedAt: job.updatedAt || null,
+  }
+}
+
 export default function AdminPage() {
   const { session, currentUser, fetchWithTenantAuth, hasAnyPermission } = useAuth()
   const [users, setUsers] = useState([])
@@ -161,6 +201,15 @@ export default function AdminPage() {
   const [formSuccess, setFormSuccess] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [activeUserId, setActiveUserId] = useState('')
+  const [projectionStatus, setProjectionStatus] = useState(null)
+  const [projectionError, setProjectionError] = useState('')
+  const [isProjectionLoading, setIsProjectionLoading] = useState(false)
+  const [isProjectionMutating, setIsProjectionMutating] = useState(false)
+  const [projectionJobs, setProjectionJobs] = useState([])
+  const [selectedProjectionJob, setSelectedProjectionJob] = useState(null)
+  const [selectedProjectionJobId, setSelectedProjectionJobId] = useState('')
+  const [isProjectionJobsLoading, setIsProjectionJobsLoading] = useState(false)
+  const [isProjectionJobLoading, setIsProjectionJobLoading] = useState(false)
 
   const canViewUsers = hasAnyPermission(['admin_users_view', 'manage_integrations', 'release_decision'])
   const canCreateUsers = hasAnyPermission(['admin_users_create', 'manage_integrations', 'release_decision'])
@@ -213,6 +262,97 @@ export default function AdminPage() {
   useEffect(() => {
     loadAdminData()
   }, [loadAdminData])
+
+  const loadProjectionStatus = useCallback(async () => {
+    if (!session?.access_token || !session?.tenant_id) return
+
+    setIsProjectionLoading(true)
+    setProjectionError('')
+
+    try {
+      const response = await fetchWithTenantAuth(workProjectionStatusUrl)
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to load work projection status.'))
+      }
+
+      setProjectionStatus(normalizeProjectionStatus(payload))
+    } catch (nextError) {
+      setProjectionStatus(null)
+      setProjectionError(nextError.message || 'Unable to load work projection status.')
+    } finally {
+      setIsProjectionLoading(false)
+    }
+  }, [fetchWithTenantAuth, session])
+
+  useEffect(() => {
+    loadProjectionStatus()
+  }, [loadProjectionStatus])
+
+  useEffect(() => {
+    if (!session?.access_token || !session?.tenant_id) return undefined
+
+    const intervalId = window.setInterval(() => {
+      loadProjectionStatus()
+    }, 4000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [loadProjectionStatus, session])
+
+  const loadProjectionJobs = useCallback(async () => {
+    if (!session?.access_token || !session?.tenant_id) return
+
+    setIsProjectionJobsLoading(true)
+
+    try {
+      const response = await fetchWithTenantAuth(`${workProjectionJobsUrl}?limit=10`)
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to load projection jobs.'))
+      }
+
+      setProjectionJobs(normalizeCollection(payload, ['jobs']).map(normalizeProjectionJob).filter(Boolean))
+    } catch (nextError) {
+      setProjectionJobs([])
+      setProjectionError(nextError.message || 'Unable to load projection jobs.')
+    } finally {
+      setIsProjectionJobsLoading(false)
+    }
+  }, [fetchWithTenantAuth, session])
+
+  const loadProjectionJob = useCallback(async (jobId) => {
+    if (!jobId) return null
+
+    setIsProjectionJobLoading(true)
+    setSelectedProjectionJobId(jobId)
+
+    try {
+      const response = await fetchWithTenantAuth(getWorkProjectionJobUrl(jobId))
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to load projection job details.'))
+      }
+
+      const nextJob = normalizeProjectionJob(payload)
+      setSelectedProjectionJob(nextJob)
+      return nextJob
+    } catch (nextError) {
+      setSelectedProjectionJob(null)
+      setProjectionError(nextError.message || 'Unable to load projection job details.')
+      return null
+    } finally {
+      setIsProjectionJobLoading(false)
+    }
+  }, [fetchWithTenantAuth])
+
+  useEffect(() => {
+    loadProjectionJobs()
+  }, [loadProjectionJobs])
 
   useEffect(() => {
     if (!isModalOpen) {
@@ -451,6 +591,81 @@ export default function AdminPage() {
     }
   }
 
+  async function handleProjectionAction(action) {
+    setIsProjectionMutating(true)
+    setProjectionError('')
+
+    try {
+      const url = action === 'chunk'
+        ? `${workProjectionRebuildUrl}?reset=true&limit=100`
+        : `${workProjectionRebuildAllUrl}?reset=true&limit=100`
+
+      const response = await fetchWithTenantAuth(url, { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to rebuild work projection.'))
+      }
+
+      await loadProjectionStatus()
+      await loadProjectionJobs()
+    } catch (nextError) {
+      setProjectionError(nextError.message || 'Unable to rebuild work projection.')
+    } finally {
+      setIsProjectionMutating(false)
+    }
+  }
+
+  async function handleProjectionRetry(jobId) {
+    if (!jobId) return
+
+    setIsProjectionMutating(true)
+    setProjectionError('')
+
+    try {
+      const response = await fetchWithTenantAuth(getWorkProjectionJobRetryUrl(jobId), { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to retry projection job.'))
+      }
+
+      await Promise.all([loadProjectionStatus(), loadProjectionJobs()])
+      if (payload?.jobId) {
+        await loadProjectionJob(payload.jobId)
+      }
+    } catch (nextError) {
+      setProjectionError(nextError.message || 'Unable to retry projection job.')
+    } finally {
+      setIsProjectionMutating(false)
+    }
+  }
+
+  async function handleProjectionCancel(jobId) {
+    if (!jobId) return
+
+    setIsProjectionMutating(true)
+    setProjectionError('')
+
+    try {
+      const response = await fetchWithTenantAuth(getWorkProjectionJobCancelUrl(jobId), { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to cancel projection job.'))
+      }
+
+      await Promise.all([loadProjectionStatus(), loadProjectionJobs()])
+      if (payload?.jobId) {
+        await loadProjectionJob(payload.jobId)
+      }
+    } catch (nextError) {
+      setProjectionError(nextError.message || 'Unable to cancel projection job.')
+    } finally {
+      setIsProjectionMutating(false)
+    }
+  }
+
   if (!canViewUsers) {
     return (
       <div className="page-wrap">
@@ -627,6 +842,58 @@ export default function AdminPage() {
         <article className="panel">
           <div className="panel-header">
             <div>
+              <h3>Work projection</h3>
+              <p>Projection readiness for the `student_work_state` read model.</p>
+            </div>
+            <div className="pill-row compact">
+              <button type="button" className="secondary-button" onClick={loadProjectionStatus} disabled={isProjectionLoading || isProjectionMutating}>
+                <RotateCcw size={16} />
+                Refresh
+              </button>
+            </div>
+          </div>
+          {projectionError ? <p className="auth-error">{projectionError}</p> : null}
+          {projectionStatus ? (
+            <>
+              <div className="metric-cluster">
+                <div><span>Projected</span><strong>{projectionStatus.projectedStudents}</strong></div>
+                <div><span>Total</span><strong>{projectionStatus.totalStudents}</strong></div>
+                <div><span>Remaining</span><strong>{projectionStatus.remainingStudents}</strong></div>
+                <div><span>Ready</span><strong>{projectionStatus.ready ? 'Yes' : 'No'}</strong></div>
+              </div>
+              <div className="stack-list">
+                <div className="stack-row"><strong>Last projected</strong><span>{formatDateTime(projectionStatus.lastProjectedAt)}</span></div>
+                <div className="stack-row"><strong>Next cursor</strong><span>{projectionStatus.nextCursor || 'None'}</span></div>
+                <div className="stack-row"><strong>Job status</strong><span>{projectionStatus.currentJob?.status || 'No active job'}</span></div>
+                {projectionStatus.currentJob?.error ? <p className="auth-error">{projectionStatus.currentJob.error}</p> : null}
+              </div>
+              <div className="work-item-actions">
+                <button type="button" className="secondary-button" onClick={() => handleProjectionAction('chunk')} disabled={isProjectionMutating}>
+                  {isProjectionMutating ? 'Working...' : 'Rebuild chunk'}
+                </button>
+                <button type="button" className="primary-button" onClick={() => handleProjectionAction('all')} disabled={isProjectionMutating}>
+                  {isProjectionMutating ? 'Working...' : 'Rebuild all'}
+                </button>
+                {projectionStatus.currentJob?.status === 'failed' && projectionStatus.currentJob?.jobId ? (
+                  <button type="button" className="secondary-button" onClick={() => handleProjectionRetry(projectionStatus.currentJob.jobId)} disabled={isProjectionMutating}>
+                    {isProjectionMutating ? 'Working...' : 'Retry failed job'}
+                  </button>
+                ) : null}
+                {projectionStatus.currentJob?.status === 'running' && projectionStatus.currentJob?.jobId ? (
+                  <button type="button" className="secondary-button" onClick={() => handleProjectionCancel(projectionStatus.currentJob.jobId)} disabled={isProjectionMutating}>
+                    {isProjectionMutating ? 'Working...' : 'Cancel job'}
+                  </button>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="muted-copy">{isProjectionLoading ? 'Loading projection status...' : 'Projection status is not available yet.'}</p>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
               <h3>Role catalog</h3>
               <p>Display labels come from the backend when available. Machine keys stay authoritative.</p>
             </div>
@@ -639,6 +906,66 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Projection jobs</h3>
+              <p>Recent projection history for retries and failure inspection.</p>
+            </div>
+            <div className="pill-row compact">
+              <button type="button" className="secondary-button" onClick={loadProjectionJobs} disabled={isProjectionJobsLoading || isProjectionMutating}>
+                <RotateCcw size={16} />
+                Refresh jobs
+              </button>
+            </div>
+          </div>
+          {projectionJobs.length ? (
+            <div className="stack-list">
+              {projectionJobs.map((job) => (
+                <div key={job.jobId} className="feed-item">
+                  <div>
+                    <div className="feed-top">
+                      <strong>{job.jobId}</strong>
+                      <span className={`badge ${job.status === 'completed' ? 'risk-low' : job.status === 'failed' ? 'risk-high' : 'neutral-badge'}`}>{job.status}</span>
+                    </div>
+                    <p>{job.error || `${job.processedStudents} processed, ${job.remainingStudents} remaining`}</p>
+                  </div>
+                  <div className="work-item-actions">
+                    <button type="button" className="secondary-button" onClick={() => loadProjectionJob(job.jobId)} disabled={isProjectionJobLoading && selectedProjectionJobId === job.jobId}>
+                      {isProjectionJobLoading && selectedProjectionJobId === job.jobId ? 'Loading...' : 'View job'}
+                    </button>
+                    {job.status === 'failed' ? (
+                      <button type="button" className="secondary-button" onClick={() => handleProjectionRetry(job.jobId)} disabled={isProjectionMutating}>
+                        {isProjectionMutating ? 'Working...' : 'Retry'}
+                      </button>
+                    ) : null}
+                    {job.status === 'running' ? (
+                      <button type="button" className="secondary-button" onClick={() => handleProjectionCancel(job.jobId)} disabled={isProjectionMutating}>
+                        {isProjectionMutating ? 'Working...' : 'Cancel'}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted-copy">{isProjectionJobsLoading ? 'Loading projection jobs...' : 'No projection jobs are available yet.'}</p>
+          )}
+          {selectedProjectionJob ? (
+            <div className="stack-list">
+              <div className="stack-row"><strong>Selected job</strong><span>{selectedProjectionJob.jobId}</span></div>
+              <div className="stack-row"><strong>Status</strong><span>{selectedProjectionJob.status}</span></div>
+              <div className="stack-row"><strong>Chunk size</strong><span>{selectedProjectionJob.chunkSize || 'Not set'}</span></div>
+              <div className="stack-row"><strong>Processed</strong><span>{selectedProjectionJob.processedStudents}</span></div>
+              <div className="stack-row"><strong>Remaining</strong><span>{selectedProjectionJob.remainingStudents}</span></div>
+              <div className="stack-row"><strong>Started</strong><span>{formatDateTime(selectedProjectionJob.startedAt)}</span></div>
+              <div className="stack-row"><strong>Completed</strong><span>{formatDateTime(selectedProjectionJob.completedAt)}</span></div>
+              <div className="stack-row"><strong>Next cursor</strong><span>{selectedProjectionJob.nextCursor || 'None'}</span></div>
+              {selectedProjectionJob.error ? <p className="auth-error">{selectedProjectionJob.error}</p> : null}
+            </div>
+          ) : null}
         </article>
 
         <article className="panel">

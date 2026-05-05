@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock3, RefreshCw, Send, UserPlus } from 'lucide-react'
+import { ArrowLeft, Clock3, RefreshCw, Send, Sparkles, UserPlus } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
+import {
+  getApiErrorMessage,
+  getDecisionAgentDetailsUrl,
+  getDecisionRecommendationUrl,
+  getDecisionReviewUrl,
+  getDecisionSnapshotUrl,
+} from '../lib/operationsApi'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const decisionBaseUrl = `${apiBaseUrl}/api/v1/decisions`
-const allowedStatuses = ['Draft', 'Ready for review', 'Needs evidence', 'Approved', 'Released']
-
 function formatDateTime(value) {
   if (!value) return 'Not available'
 
@@ -39,27 +44,69 @@ function normalizeTimeline(payload) {
   return []
 }
 
+function getResultMessage(result, fallback) {
+  return result?.message || result?.error || fallback || ''
+}
+
+function normalizeRationale(value) {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  if (typeof value === 'string' && value.trim()) return [value.trim()]
+  return []
+}
+
 export default function DecisionStudioDetailPage() {
   const { decisionId } = useParams()
   const { session, fetchWithTenantAuth } = useAuth()
   const [detail, setDetail] = useState(null)
+  const [agentDetails, setAgentDetails] = useState(null)
   const [timeline, setTimeline] = useState([])
   const [isLoading, setIsLoading] = useState(false)
+  const [isAgentDetailsLoading, setIsAgentDetailsLoading] = useState(false)
   const [isTimelineLoading, setIsTimelineLoading] = useState(false)
   const [error, setError] = useState('')
+  const [agentError, setAgentError] = useState('')
   const [timelineError, setTimelineError] = useState('')
   const [mutationError, setMutationError] = useState('')
   const [mutationSuccess, setMutationSuccess] = useState('')
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+  const [reviewSnapshotVersion, setReviewSnapshotVersion] = useState('')
+  const [isGeneratingRecommendation, setIsGeneratingRecommendation] = useState(false)
+  const [activeReviewAction, setActiveReviewAction] = useState('')
   const [isAddingNote, setIsAddingNote] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
-  const [statusValue, setStatusValue] = useState('Draft')
   const [noteBody, setNoteBody] = useState('')
   const [assigneeUserId, setAssigneeUserId] = useState('')
   const [assignQueue, setAssignQueue] = useState('')
+  const [reviewNote, setReviewNote] = useState('')
 
   const detailUrl = `${decisionBaseUrl}/${decisionId}`
   const timelineUrl = `${decisionBaseUrl}/${decisionId}/timeline`
+
+  const loadAgentDetails = useCallback(async () => {
+    if (!session?.access_token || !session?.tenant_id || !decisionId) return
+
+    setIsAgentDetailsLoading(true)
+    setAgentError('')
+
+    try {
+      const response = await fetchWithTenantAuth(getDecisionAgentDetailsUrl(decisionId))
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setAgentDetails(null)
+          return
+        }
+        throw new Error(getApiErrorMessage(response, payload, 'Unable to load decision agent details.'))
+      }
+
+      setAgentDetails(payload)
+    } catch (nextError) {
+      setAgentDetails(null)
+      setAgentError(nextError.message || 'Unable to load decision agent details.')
+    } finally {
+      setIsAgentDetailsLoading(false)
+    }
+  }, [decisionId, fetchWithTenantAuth, session])
 
   const loadDecision = useCallback(async () => {
     if (!session?.access_token || !session?.tenant_id || !decisionId) return
@@ -69,8 +116,13 @@ export default function DecisionStudioDetailPage() {
     setTimelineError('')
 
     try {
-      const response = await fetchWithTenantAuth(detailUrl)
-      const payload = await response.json().catch(() => ({}))
+      let response = await fetchWithTenantAuth(getDecisionSnapshotUrl(decisionId))
+      let payload = await response.json().catch(() => ({}))
+
+      if (response.status === 404) {
+        response = await fetchWithTenantAuth(detailUrl)
+        payload = await response.json().catch(() => ({}))
+      }
 
       if (!response.ok) {
         if (response.status === 401) throw new Error('Your session is no longer valid. Please sign in again.')
@@ -80,7 +132,6 @@ export default function DecisionStudioDetailPage() {
       }
 
       setDetail(payload)
-      setStatusValue(payload?.status || 'Draft')
       setAssignQueue(payload?.queue || '')
       setTimeline(normalizeTimeline(payload?.timelinePreview))
     } catch (nextError) {
@@ -115,6 +166,10 @@ export default function DecisionStudioDetailPage() {
     loadDecision()
   }, [loadDecision])
 
+  useEffect(() => {
+    loadAgentDetails()
+  }, [loadAgentDetails])
+
   async function postDecisionAction(url, body, messages) {
     setMutationError('')
     setMutationSuccess('')
@@ -137,22 +192,6 @@ export default function DecisionStudioDetailPage() {
     setMutationSuccess(messages.success)
     await loadDecision()
     return payload
-  }
-
-  async function handleStatusSubmit(event) {
-    event.preventDefault()
-    setIsUpdatingStatus(true)
-
-    try {
-      await postDecisionAction(`${detailUrl}/status`, { status: statusValue }, {
-        success: 'Status updated.',
-        error: 'Unable to update status.',
-      })
-    } catch (nextError) {
-      setMutationError(nextError.message || 'Unable to update status.')
-    } finally {
-      setIsUpdatingStatus(false)
-    }
   }
 
   async function handleNoteSubmit(event) {
@@ -202,8 +241,86 @@ export default function DecisionStudioDetailPage() {
     }
   }
 
+  async function handleGenerateRecommendation() {
+    setMutationError('')
+    setMutationSuccess('')
+    setIsGeneratingRecommendation(true)
+
+    try {
+      const response = await fetchWithTenantAuth(getDecisionRecommendationUrl(decisionId), {
+        method: 'POST',
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response, payload, 'Unable to generate the decision recommendation.'))
+      }
+
+      setMutationSuccess(payload?.status === 'completed'
+        ? 'Decision recommendation generated.'
+        : payload?.detail || 'Decision recommendation queued.')
+      await Promise.all([
+        loadDecision(),
+        loadAgentDetails(),
+      ])
+    } catch (nextError) {
+      setMutationError(nextError.message || 'Unable to generate the decision recommendation.')
+    } finally {
+      setIsGeneratingRecommendation(false)
+    }
+  }
+
+  async function handleReviewAction(action) {
+    setMutationError('')
+    setMutationSuccess('')
+    setActiveReviewAction(action)
+
+    try {
+      const response = await fetchWithTenantAuth(getDecisionReviewUrl(decisionId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action,
+          ...(reviewNote.trim() ? { note: reviewNote.trim() } : {}),
+        }),
+      })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getApiErrorMessage(response, payload, 'Unable to review the decision recommendation.'))
+      }
+
+      setReviewSnapshotVersion(payload?.snapshotVersion || '')
+      setMutationSuccess(
+        action === 'accept_recommendation'
+          ? payload?.detail || 'Recommendation accepted.'
+          : payload?.detail || 'Evidence requested.',
+      )
+      setReviewNote('')
+      await Promise.all([
+        loadDecision(),
+        loadAgentDetails(),
+      ])
+    } catch (nextError) {
+      setMutationError(nextError.message || 'Unable to review the decision recommendation.')
+    } finally {
+      setActiveReviewAction('')
+    }
+  }
+
   const trustSignals = useMemo(() => detail?.trust?.signals || [], [detail])
   const notes = useMemo(() => detail?.notes || [], [detail])
+  const decisionRecommendation = agentDetails?.recommendation || detail?.recommendation || null
+  const decisionRunResult = agentDetails?.latestRun?.result || null
+  const decisionRunMetrics = decisionRunResult?.metrics || {}
+  const decisionRunArtifacts = decisionRunResult?.artifacts || {}
+  const decisionActions = useMemo(() => Array.isArray(agentDetails?.actions) ? agentDetails.actions : [], [agentDetails?.actions])
+  const lastReviewedSnapshot = agentDetails?.lastReviewedSnapshot || null
+  const recommendationRationale = normalizeRationale(decisionRecommendation?.rationale)
+  const reviewedRecommendationRationale = normalizeRationale(lastReviewedSnapshot?.snapshot?.recommendation?.rationale)
+  const runRecommendationRationale = normalizeRationale(decisionRunArtifacts.recommendationRationale)
 
   if (isLoading && !detail) {
     return (
@@ -246,9 +363,13 @@ export default function DecisionStudioDetailPage() {
       <SectionHeader
         eyebrow="Decision packet"
         title={detail.student?.name || 'Decision packet'}
-        subtitle={`${detail.program?.name || 'Program not set'} • Updated ${formatDateTime(detail.updatedAt)}`}
+        subtitle={`${detail.program?.name || 'Program not set'} - Updated ${formatDateTime(detail.updatedAt)}`}
         actions={(
           <>
+            <button type="button" className="primary-button" onClick={handleGenerateRecommendation} disabled={isGeneratingRecommendation}>
+              <Sparkles size={16} />
+              {isGeneratingRecommendation ? 'Generating...' : 'Generate recommendation'}
+            </button>
             <button type="button" className="secondary-button" onClick={loadDecision}>
               <RefreshCw size={16} />
               Refresh
@@ -281,6 +402,7 @@ export default function DecisionStudioDetailPage() {
           <div className="decision-inline-feedback">
             {mutationError ? <p className="auth-error">{mutationError}</p> : null}
             {mutationSuccess ? <p className="auth-success">{mutationSuccess}</p> : null}
+            {reviewSnapshotVersion ? <p className="muted-copy">Reviewed snapshot version: {reviewSnapshotVersion}</p> : null}
           </div>
         ) : null}
       </section>
@@ -324,16 +446,144 @@ export default function DecisionStudioDetailPage() {
             </div>
           </div>
           <div className="metric-cluster">
-            <div><span>Fit</span><strong>{formatPercent(detail.recommendation?.fit)}</strong></div>
-            <div><span>Credit estimate</span><strong>{formatNumber(detail.recommendation?.creditEstimate)}</strong></div>
+            <div><span>Fit</span><strong>{formatPercent(decisionRecommendation?.fit)}</strong></div>
+            <div><span>Confidence</span><strong>{formatPercent(decisionRecommendation?.confidence)}</strong></div>
+            <div><span>Credit estimate</span><strong>{formatNumber(decisionRecommendation?.creditEstimate)}</strong></div>
             <div><span>Readiness</span><strong>{detail.readiness || '-'}</strong></div>
           </div>
           <div className="callout-card">
             <h4>Why this packet is landing here</h4>
-            <p>{detail.recommendation?.reason || 'No recommendation rationale has been recorded yet.'}</p>
+            <p>{decisionRecommendation?.reason || 'No recommendation rationale has been recorded yet.'}</p>
+            {recommendationRationale.length ? (
+              <div className="stack-list" style={{ marginTop: '0.75rem' }}>
+                {recommendationRationale.map((item, index) => (
+                  <div key={`${item}-${index}`} className="stack-row">
+                    <strong>{index + 1}</strong>
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </article>
 
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Decision agent</h3>
+              <p>Normalized recommendation run and step history for explicit agent-generated outcomes.</p>
+            </div>
+          </div>
+          {agentError ? <p className="auth-error">{agentError}</p> : null}
+          {agentDetails ? (
+            <>
+              <div className="metric-cluster">
+                <div><span>Run status</span><strong>{agentDetails.latestRun?.status || '-'}</strong></div>
+                <div><span>Run code</span><strong>{decisionRunResult?.code || '-'}</strong></div>
+                <div><span>Status snapshot</span><strong>{decisionRunMetrics.status || '-'}</strong></div>
+                <div><span>Readiness snapshot</span><strong>{decisionRunMetrics.readiness || '-'}</strong></div>
+                <div><span>Trust status</span><strong>{decisionRunMetrics.trustStatus || '-'}</strong></div>
+                <div><span>Fit</span><strong>{formatNumber(decisionRunMetrics.fit)}</strong></div>
+                <div><span>Recommendation confidence</span><strong>{formatPercent(decisionRunMetrics.recommendationConfidence)}</strong></div>
+                <div><span>Credit estimate</span><strong>{formatNumber(decisionRunMetrics.creditEstimate)}</strong></div>
+                <div><span>Documents</span><strong>{formatNumber(decisionRunMetrics.documentCount)}</strong></div>
+                <div><span>Trust signals</span><strong>{formatNumber(decisionRunMetrics.trustSignalCount)}</strong></div>
+                <div><span>Active trust signals</span><strong>{formatNumber(decisionRunMetrics.activeTrustSignalCount)}</strong></div>
+                <div><span>Agent run id</span><strong>{agentDetails.latestRun?.runId || '-'}</strong></div>
+              </div>
+              <div className="callout-card">
+                <h4>Latest agent outcome</h4>
+                <p>{getResultMessage(decisionRunResult, agentDetails.latestRun?.error || 'No decision agent outcome has been recorded yet.')}</p>
+              </div>
+              {lastReviewedSnapshot ? (
+                <div className="callout-card accent-soft">
+                  <h4>Last reviewed snapshot</h4>
+                  <p>{lastReviewedSnapshot.action || 'reviewed'} on {formatDateTime(lastReviewedSnapshot.reviewedAt)}</p>
+                  <div className="pill-row compact">
+                    {lastReviewedSnapshot.snapshotVersion ? <span className="tag">{lastReviewedSnapshot.snapshotVersion}</span> : null}
+                    {lastReviewedSnapshot.reviewedByUserId ? <span className="tag">Reviewer: {lastReviewedSnapshot.reviewedByUserId}</span> : null}
+                  </div>
+                  <div className="metric-cluster" style={{ marginTop: '0.75rem' }}>
+                    <div><span>Status</span><strong>{lastReviewedSnapshot.snapshot?.status || '-'}</strong></div>
+                    <div><span>Readiness</span><strong>{lastReviewedSnapshot.snapshot?.readiness || '-'}</strong></div>
+                    <div><span>Trust</span><strong>{lastReviewedSnapshot.snapshot?.trust?.status || '-'}</strong></div>
+                    <div><span>Fit</span><strong>{formatPercent(lastReviewedSnapshot.snapshot?.recommendation?.fit)}</strong></div>
+                    <div><span>Confidence</span><strong>{formatPercent(lastReviewedSnapshot.snapshot?.recommendation?.confidence)}</strong></div>
+                    <div><span>Credit estimate</span><strong>{formatNumber(lastReviewedSnapshot.snapshot?.recommendation?.creditEstimate)}</strong></div>
+                    <div><span>Documents</span><strong>{formatNumber(lastReviewedSnapshot.snapshot?.evidence?.documentCount)}</strong></div>
+                  </div>
+                  {reviewedRecommendationRationale.length ? (
+                    <div className="stack-list" style={{ marginTop: '0.75rem' }}>
+                      {reviewedRecommendationRationale.map((item, index) => (
+                        <div key={`${item}-${index}`} className="stack-row">
+                          <strong>{index + 1}</strong>
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <div className="metric-cluster">
+                <div><span>Institution</span><strong>{decisionRunArtifacts.institution || detail.evidence?.institution || '-'}</strong></div>
+                <div><span>GPA</span><strong>{formatNumber(decisionRunArtifacts.gpa ?? detail.evidence?.gpa)}</strong></div>
+                <div><span>Credits earned</span><strong>{formatNumber(decisionRunArtifacts.creditsEarned ?? detail.evidence?.creditsEarned)}</strong></div>
+                <div><span>Parser confidence</span><strong>{formatPercent(decisionRunArtifacts.parserConfidence ?? detail.evidence?.parserConfidence, 0)}</strong></div>
+                <div><span>Readiness reason</span><strong>{decisionRunArtifacts.readinessReason || '-'}</strong></div>
+                <div><span>Recommendation reason</span><strong>{decisionRunArtifacts.recommendationReason || '-'}</strong></div>
+              </div>
+              {runRecommendationRationale.length ? (
+                <div className="callout-card">
+                  <h4>Recommendation rationale</h4>
+                  <div className="stack-list">
+                    {runRecommendationRationale.map((item, index) => (
+                      <div key={`${item}-${index}`} className="stack-row">
+                        <strong>{index + 1}</strong>
+                        <span>{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className="timeline-list">
+                {decisionActions.length ? decisionActions.map((action) => {
+                  const actionRationale = normalizeRationale(action.result?.artifacts?.recommendationRationale)
+
+                  return (
+                    <div key={action.actionId || `${action.actionType}-${action.startedAt}`} className="timeline-content">
+                      <div className="timeline-top">
+                        <strong>{action.actionType || action.toolName || 'Action'}</strong>
+                        <span className="badge neutral-badge">{action.status || 'unknown'}</span>
+                      </div>
+                      <p>{getResultMessage(action.result, action.error || 'No action message provided.')}</p>
+                      {actionRationale.length ? (
+                        <div className="stack-list" style={{ marginTop: '0.75rem' }}>
+                          {actionRationale.map((item, index) => (
+                            <div key={`${action.actionId || action.actionType}-${item}-${index}`} className="stack-row">
+                              <strong>{index + 1}</strong>
+                              <span>{item}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="timeline-meta">
+                        {action.result?.code ? <span>Code: {action.result.code}</span> : null}
+                        {action.result?.metrics?.readiness ? <span>Readiness: {action.result.metrics.readiness}</span> : null}
+                        {action.result?.metrics?.trustStatus ? <span>Trust: {action.result.metrics.trustStatus}</span> : null}
+                        <span>{formatDateTime(action.completedAt || action.startedAt)}</span>
+                      </div>
+                    </div>
+                  )
+                }) : <p className="muted-copy">No recommendation actions are available yet.</p>}
+              </div>
+            </>
+          ) : (
+            <p className="muted-copy">{isAgentDetailsLoading ? 'Loading decision agent details...' : 'No decision agent run has been recorded yet.'}</p>
+          )}
+        </article>
+      </section>
+
+      <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
             <div>
@@ -386,24 +636,40 @@ export default function DecisionStudioDetailPage() {
           <div className="panel-header">
             <div>
               <h3>Actions</h3>
-              <p>Update review state, add notes, and assign ownership.</p>
+              <p>Accept or send back the recommendation, then manage assignment separately.</p>
             </div>
           </div>
 
           <div className="decision-actions-grid">
-            <form className="auth-form" onSubmit={handleStatusSubmit}>
+            <div className="auth-form">
               <label className="auth-field">
-                <span>Status</span>
-                <select value={statusValue} onChange={(event) => setStatusValue(event.target.value)}>
-                  {allowedStatuses.map((status) => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
+                <span>Review note</span>
+                <textarea
+                  rows="4"
+                  value={reviewNote}
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  placeholder="Add context for accepting the recommendation or requesting more evidence."
+                />
               </label>
-              <button type="submit" className="primary-button" disabled={isUpdatingStatus}>
-                {isUpdatingStatus ? 'Saving...' : 'Update status'}
-              </button>
-            </form>
+              <div className="work-item-actions">
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => handleReviewAction('accept_recommendation')}
+                  disabled={activeReviewAction !== ''}
+                >
+                  {activeReviewAction === 'accept_recommendation' ? 'Applying...' : 'Accept recommendation'}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => handleReviewAction('request_evidence')}
+                  disabled={activeReviewAction !== ''}
+                >
+                  {activeReviewAction === 'request_evidence' ? 'Applying...' : 'Request evidence'}
+                </button>
+              </div>
+            </div>
 
             <form className="auth-form" onSubmit={handleAssignSubmit}>
               <label className="auth-field">

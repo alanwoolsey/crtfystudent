@@ -16,6 +16,13 @@ function getDisplayValue(value, fallback = '') {
   return fallback || 'Unknown'
 }
 
+function formatPercentScore(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  if (Number.isNaN(number)) return '-'
+  return `${Math.round(number <= 1 ? number * 100 : number)}%`
+}
+
 export default function StudentCard({ student }) {
   const { hasSensitivityTier, hasAnyPermission } = useAuth()
   const nextBestAction = student.recommendation?.nextBestAction || student.nextBestAction || 'Review'
@@ -34,7 +41,7 @@ export default function StudentCard({ student }) {
       <div className="student-card-top">
         <div>
           <h3>{student.name}</h3>
-          <p>{programLabel}{institutionGoalLabel ? ` • ${institutionGoalLabel}` : ''}</p>
+          <p>{programLabel}{institutionGoalLabel ? ` - ${institutionGoalLabel}` : ''}</p>
         </div>
         <ArrowUpRight size={18} />
       </div>
@@ -42,8 +49,8 @@ export default function StudentCard({ student }) {
       <div className="pill-row compact">
         <span className={`badge risk-${riskLabel.toLowerCase()}`}>{stageLabel}</span>
         <ReadinessChip readiness={readiness} />
-        {showAcademic ? <span className="tag">{student.fitScore}% fit</span> : null}
-        <span className="tag">{student.depositLikelihood}% deposit</span>
+        {showAcademic ? <span className="tag">{formatPercentScore(student.fitScore)} fit</span> : null}
+        <span className="tag">{formatPercentScore(student.depositLikelihood)} deposit</span>
       </div>
 
       <p className="student-summary">{student.summary}</p>

@@ -4,11 +4,13 @@ import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
 import {
   getAgentRunActionsUrl,
+  documentExceptionsUrl,
   documentsQueueUrl,
   getAgentRunUrl,
   getApiErrorMessage,
   getDocumentActionUrl,
   getDocumentExceptionSummaryUrl,
+  getDocumentRunDetailsUrl,
   getDocumentReprocessUploadUrl,
   getTranscriptUploadStatusUrl,
   normalizeItems,
@@ -48,10 +50,17 @@ function getTranscriptStatus(payload) {
   return 'processing'
 }
 
+function getAgentResult(payload) {
+  return payload?.result && typeof payload.result === 'object' ? payload.result : null
+}
+
 function getOperationMessage({ agentPayload, transcriptPayload, fallback }) {
+  const agentResult = getAgentResult(agentPayload)
   return transcriptPayload?.error
     || transcriptPayload?.detail
     || transcriptPayload?.message
+    || agentResult?.error
+    || agentResult?.message
     || agentPayload?.error
     || agentPayload?.detail
     || agentPayload?.message
@@ -61,7 +70,29 @@ function getOperationMessage({ agentPayload, transcriptPayload, fallback }) {
 function getActionsFailureMessage(payload) {
   const items = Array.isArray(payload?.items) ? payload.items : []
   const failedItem = items.find((item) => item?.status === 'failed')
-  return failedItem?.error || ''
+  return failedItem?.result?.error || failedItem?.result?.message || failedItem?.error || ''
+}
+
+function getActionStatusBadgeClass(status) {
+  const value = String(status || '').toLowerCase()
+  if (value === 'completed') return 'risk-low'
+  if (value === 'failed') return 'risk-high'
+  if (value === 'skipped') return 'neutral-badge'
+  return 'risk-medium'
+}
+
+function getActionMessage(action) {
+  const result = action?.result && typeof action.result === 'object' ? action.result : null
+  const output = action?.output && typeof action.output === 'object' ? action.output : null
+  return result?.message
+    || result?.error
+    || output?.message
+    || output?.error
+    || action?.error
+    || result?.code
+    || output?.code
+    || action?.status
+    || 'No details'
 }
 
 function normalizeExceptionSummary(payload) {
@@ -87,6 +118,22 @@ function normalizeExceptionSummary(payload) {
   }
 }
 
+function normalizeRunDetails(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  return {
+    documentId: payload.documentId || '',
+    transcriptId: payload.transcriptId || '',
+    studentId: payload.studentId || '',
+    studentName: payload.studentName || '',
+    documentStatus: payload.documentStatus || '',
+    transcriptStatus: payload.transcriptStatus || '',
+    parserConfidence: payload.parserConfidence,
+    latestFailure: payload.latestFailure || null,
+    run: payload.run || null,
+    actions: Array.isArray(payload.actions) ? payload.actions : [],
+  }
+}
+
 export default function DocumentsQueuePage() {
   const { session, fetchWithTenantAuth, hasAnyPermission } = useAuth()
   const reprocessInputRef = useRef(null)
@@ -101,6 +148,7 @@ export default function DocumentsQueuePage() {
   const [reprocessState, setReprocessState] = useState(null)
   const [expandedDocumentId, setExpandedDocumentId] = useState('')
   const [exceptionSummaryByDocumentId, setExceptionSummaryByDocumentId] = useState({})
+  const [runDetailsByDocumentId, setRunDetailsByDocumentId] = useState({})
   const [exceptionSummaryLoadingId, setExceptionSummaryLoadingId] = useState('')
 
   const canIndex = hasAnyPermission(['edit_checklist', 'view_sensitive_docs'])
@@ -117,8 +165,14 @@ export default function DocumentsQueuePage() {
       params.set('view', activeView)
       if (query.trim()) params.set('q', query.trim())
 
-      const response = await fetchWithTenantAuth(`${documentsQueueUrl}?${params.toString()}`)
-      const payload = await response.json().catch(() => ({}))
+      const preferredUrl = `${documentExceptionsUrl}?${params.toString()}`
+      let response = await fetchWithTenantAuth(preferredUrl)
+      let payload = await response.json().catch(() => ({}))
+
+      if (response.status === 404) {
+        response = await fetchWithTenantAuth(`${documentsQueueUrl}?${params.toString()}`)
+        payload = await response.json().catch(() => ({}))
+      }
 
       if (!response.ok) {
         throw new Error(getApiErrorMessage(response, payload, 'Unable to load documents queue.'))
@@ -198,6 +252,34 @@ export default function DocumentsQueuePage() {
     }
   }
 
+  async function loadRunDetails(documentId) {
+    if (!documentId) return null
+
+    setExceptionSummaryLoadingId(documentId)
+
+    try {
+      const response = await fetchWithTenantAuth(getDocumentRunDetailsUrl(documentId))
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setRunDetailsByDocumentId((current) => ({ ...current, [documentId]: null }))
+          return null
+        }
+        throw new Error(getApiErrorMessage(response, payload, 'Unable to load document run details.'))
+      }
+
+      const details = normalizeRunDetails(payload)
+      setRunDetailsByDocumentId((current) => ({ ...current, [documentId]: details }))
+      return details
+    } catch (nextError) {
+      setError(nextError.message || 'Unable to load document run details.')
+      return null
+    } finally {
+      setExceptionSummaryLoadingId((current) => current === documentId ? '' : current)
+    }
+  }
+
   async function toggleExceptionDetails(documentId) {
     if (!documentId) return
 
@@ -207,9 +289,8 @@ export default function DocumentsQueuePage() {
     }
 
     setExpandedDocumentId(documentId)
-    if (!(documentId in exceptionSummaryByDocumentId)) {
-      await loadExceptionSummary(documentId)
-    }
+    if (!(documentId in runDetailsByDocumentId)) await loadRunDetails(documentId)
+    if (!(documentId in exceptionSummaryByDocumentId)) await loadExceptionSummary(documentId)
   }
 
   async function runReprocessPolling({ documentId, agentRunId, transcriptId, initialMessage, initialStatus, runToken }) {
@@ -221,6 +302,7 @@ export default function DocumentsQueuePage() {
       transcriptId,
       agentStatus: initialStatus || 'queued',
       transcriptStatus: 'processing',
+      resultCode: '',
       error: '',
     })
 
@@ -244,6 +326,7 @@ export default function DocumentsQueuePage() {
       }
 
       const agentStatus = agentPayload?.status || 'queued'
+      const agentResult = getAgentResult(agentPayload)
       const transcriptStatus = getTranscriptStatus(transcriptPayload)
       let failureMessage = getOperationMessage({
         agentPayload,
@@ -275,6 +358,7 @@ export default function DocumentsQueuePage() {
         transcriptId,
         agentStatus,
         transcriptStatus,
+        resultCode: agentResult?.code || '',
         error: '',
       })
 
@@ -293,6 +377,7 @@ export default function DocumentsQueuePage() {
           transcriptId,
           agentStatus,
           transcriptStatus,
+          resultCode: agentResult?.code || '',
           error: '',
         })
         await loadDocuments()
@@ -316,6 +401,7 @@ export default function DocumentsQueuePage() {
       transcriptId: '',
       agentStatus: '',
       transcriptStatus: '',
+      resultCode: '',
       error: '',
     })
 
@@ -341,6 +427,7 @@ export default function DocumentsQueuePage() {
           transcriptId: '',
           agentStatus: payload?.status || 'processing',
           transcriptStatus: '',
+          resultCode: '',
           error: '',
         })
         await loadDocuments()
@@ -401,6 +488,7 @@ export default function DocumentsQueuePage() {
       transcriptId: '',
       agentStatus: '',
       transcriptStatus: '',
+      resultCode: '',
       error: '',
     })
 
@@ -534,7 +622,17 @@ export default function DocumentsQueuePage() {
                   <div><span>Confidence</span><strong>{formatConfidence(item.confidence)}</strong></div>
                   <div><span>Source</span><strong>{item.uploadSource}</strong></div>
                   <div><span>Received</span><strong>{formatDateTime(item.receivedAt)}</strong></div>
+                  {item.documentStatus ? <div><span>Document</span><strong>{item.documentStatus}</strong></div> : null}
+                  {item.transcriptStatus ? <div><span>Transcript</span><strong>{item.transcriptStatus}</strong></div> : null}
+                  {item.latestRunStatus ? <div><span>Latest run</span><strong>{item.latestRunStatus}</strong></div> : null}
                 </div>
+
+                {item.reason ? (
+                  <div className="callout-card">
+                    <h4>{item.reason}</h4>
+                    {item.suggestedAction ? <p><strong>Suggested:</strong> {item.suggestedAction}</p> : null}
+                  </div>
+                ) : null}
 
                 <div className="card-footer-row">
                   <span>
@@ -611,6 +709,12 @@ export default function DocumentsQueuePage() {
                         <span>{reprocessState.transcriptStatus}</span>
                       </div>
                     ) : null}
+                    {reprocessState.resultCode ? (
+                      <div className="stack-row">
+                        <strong>Outcome</strong>
+                        <span>{reprocessState.resultCode}</span>
+                      </div>
+                    ) : null}
                     {reprocessState.agentRunId ? (
                       <div className="stack-row">
                         <strong>Agent run ID</strong>
@@ -644,39 +748,56 @@ export default function DocumentsQueuePage() {
 
                 {expandedDocumentId === item.id ? (
                   <div className="stack-list">
-                    {exceptionSummaryByDocumentId[item.id] ? (
+                    {runDetailsByDocumentId[item.id] || exceptionSummaryByDocumentId[item.id] ? (
                       <>
+                        {runDetailsByDocumentId[item.id]?.run?.result?.message ? (
+                          <div className="stack-row">
+                            <strong>Run result</strong>
+                            <span>{runDetailsByDocumentId[item.id].run.result.message}</span>
+                          </div>
+                        ) : null}
+                        {runDetailsByDocumentId[item.id]?.run?.result?.code ? (
+                          <div className="stack-row">
+                            <strong>Run code</strong>
+                            <span>{runDetailsByDocumentId[item.id].run.result.code}</span>
+                          </div>
+                        ) : null}
                         <div className="stack-row">
                           <strong>Issue</strong>
-                          <span>{exceptionSummaryByDocumentId[item.id].issueLabel || 'No issue label returned'}</span>
+                          <span>{exceptionSummaryByDocumentId[item.id]?.issueLabel || runDetailsByDocumentId[item.id]?.latestFailure?.message || 'No issue label returned'}</span>
                         </div>
-                        {exceptionSummaryByDocumentId[item.id].suggestedAction ? (
+                        {exceptionSummaryByDocumentId[item.id]?.suggestedAction ? (
                           <div className="stack-row">
                             <strong>Suggested action</strong>
-                            <span>{exceptionSummaryByDocumentId[item.id].suggestedAction}</span>
+                            <span>{exceptionSummaryByDocumentId[item.id]?.suggestedAction}</span>
                           </div>
                         ) : null}
-                        {exceptionSummaryByDocumentId[item.id].failureCode ? (
+                        {exceptionSummaryByDocumentId[item.id]?.failureCode || runDetailsByDocumentId[item.id]?.latestFailure?.code ? (
                           <div className="stack-row">
                             <strong>Failure code</strong>
-                            <span>{exceptionSummaryByDocumentId[item.id].failureCode}</span>
+                            <span>{exceptionSummaryByDocumentId[item.id]?.failureCode || runDetailsByDocumentId[item.id]?.latestFailure?.code}</span>
                           </div>
                         ) : null}
-                        {exceptionSummaryByDocumentId[item.id].failureMessage ? (
-                          <p className="auth-error">{exceptionSummaryByDocumentId[item.id].failureMessage}</p>
+                        {exceptionSummaryByDocumentId[item.id]?.failureMessage || runDetailsByDocumentId[item.id]?.latestFailure?.message ? (
+                          <p className="auth-error">{exceptionSummaryByDocumentId[item.id]?.failureMessage || runDetailsByDocumentId[item.id]?.latestFailure?.message}</p>
                         ) : null}
-                        {exceptionSummaryByDocumentId[item.id].latestRun ? (
+                        {runDetailsByDocumentId[item.id]?.run || exceptionSummaryByDocumentId[item.id]?.latestRun ? (
                           <div className="stack-row">
                             <strong>Latest run</strong>
-                            <span>{exceptionSummaryByDocumentId[item.id].latestRun.status || 'unknown'}</span>
+                            <span>{runDetailsByDocumentId[item.id]?.run?.status || exceptionSummaryByDocumentId[item.id]?.latestRun?.status || 'unknown'}</span>
                           </div>
                         ) : null}
-                        {exceptionSummaryByDocumentId[item.id].recentActions?.length ? (
+                        {(runDetailsByDocumentId[item.id]?.actions?.length || exceptionSummaryByDocumentId[item.id]?.recentActions?.length) ? (
                           <div className="stack-list">
-                            {exceptionSummaryByDocumentId[item.id].recentActions.map((action) => (
+                            {(runDetailsByDocumentId[item.id]?.actions?.length ? runDetailsByDocumentId[item.id].actions : exceptionSummaryByDocumentId[item.id].recentActions).map((action) => (
                               <div key={action.actionId || `${item.id}-${action.actionType}`} className="stack-row">
-                                <strong>{action.actionType || action.toolName || 'action'}</strong>
-                                <span>{action.error || action.status || 'No details'}</span>
+                                <strong>{action.toolName || action.actionType || 'action'}</strong>
+                                <span>
+                                  <span className={`badge ${getActionStatusBadgeClass(action.status)}`}>{action.status || 'unknown'}</span>
+                                  {' '}
+                                  {getActionMessage(action)}
+                                  {action.result?.code ? ` (${action.result.code})` : ''}
+                                </span>
                               </div>
                             ))}
                           </div>

@@ -3,10 +3,16 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').rep
 export const incompleteQueueUrl = `${apiBaseUrl}/api/v1/incomplete`
 export const reviewReadyUrl = `${apiBaseUrl}/api/v1/review-ready`
 export const documentsQueueUrl = `${apiBaseUrl}/api/v1/documents/queue`
+export const documentExceptionsUrl = `${apiBaseUrl}/api/v1/documents/exceptions`
 export const yieldQueueUrl = `${apiBaseUrl}/api/v1/yield`
 export const meltQueueUrl = `${apiBaseUrl}/api/v1/melt`
 export const reportingOverviewUrl = `${apiBaseUrl}/api/v1/reporting/overview`
 export const transcriptUploadsUrl = `${apiBaseUrl}/api/v1/transcripts/uploads`
+export const trustCasesUrl = `${apiBaseUrl}/api/v1/trust/cases`
+export const workProjectionStatusUrl = `${apiBaseUrl}/api/v1/work/projection/status`
+export const workProjectionRebuildUrl = `${apiBaseUrl}/api/v1/work/projection/rebuild`
+export const workProjectionRebuildAllUrl = `${apiBaseUrl}/api/v1/work/projection/rebuild-all`
+export const workProjectionJobsUrl = `${apiBaseUrl}/api/v1/work/projection/jobs`
 
 export function normalizeItems(payload, fallbackKeys = []) {
   if (Array.isArray(payload)) return payload
@@ -30,6 +36,14 @@ function normalizeReadinessState(state) {
   if (state === 'blocked_by_review') return { state, label: 'Needs review', tone: 'medium' }
   if (state === 'blocked_by_missing_item') return { state, label: 'Missing items', tone: 'neutral' }
   return { state: state || 'in_progress', label: 'In progress', tone: 'neutral' }
+}
+
+function normalizePercentScore(value) {
+  if (value === null || value === undefined || value === '') return 0
+  const number = Number(value)
+  if (Number.isNaN(number)) return 0
+  const score = number <= 1 ? number * 100 : number
+  return Math.max(0, Math.min(100, Math.round(score)))
 }
 
 export function toWorkItemFromIncomplete(item, activeView) {
@@ -117,9 +131,9 @@ export function toYieldCard(item) {
     studentName: item?.studentName || 'Unknown student',
     admitDate: item?.admitDate || null,
     depositStatus: item?.depositStatus || 'unknown',
-    yieldScore: Number(item?.yieldScore) || 0,
+    yieldScore: normalizePercentScore(item?.yieldScore ?? item?.depositLikelihood),
     lastActivityAt: item?.lastActivityAt || null,
-    milestoneCompletion: Number(item?.milestoneCompletion) || 0,
+    milestoneCompletion: normalizePercentScore(item?.milestoneCompletion),
     assignedCounselor: item?.assignedCounselor || { id: 'unassigned', name: 'Unassigned' },
     program: item?.program || 'Program pending',
     nextStep: item?.nextStep || item?.suggestedAction || 'Open student',
@@ -132,7 +146,7 @@ export function toMeltCard(item) {
     studentId: item?.studentId || item?.id,
     studentName: item?.studentName || 'Unknown student',
     depositDate: item?.depositDate || null,
-    meltRisk: Number(item?.meltRisk) || 0,
+    meltRisk: normalizePercentScore(item?.meltRisk),
     missingMilestones: Array.isArray(item?.missingMilestones) ? item.missingMilestones : [],
     lastOutreachAt: item?.lastOutreachAt || null,
     owner: item?.owner || { id: 'unassigned', name: 'Unassigned' },
@@ -152,6 +166,10 @@ export function getDocumentExceptionSummaryUrl(documentId) {
   return `${apiBaseUrl}/api/v1/documents/${documentId}/exception-summary`
 }
 
+export function getDocumentRunDetailsUrl(documentId) {
+  return `${apiBaseUrl}/api/v1/documents/${documentId}/run-details`
+}
+
 export function getAgentRunUrl(agentRunId) {
   return `${apiBaseUrl}/api/v1/agent-runs/${agentRunId}`
 }
@@ -162,6 +180,42 @@ export function getAgentRunActionsUrl(agentRunId) {
 
 export function getTranscriptUploadStatusUrl(transcriptId) {
   return `${transcriptUploadsUrl}/${transcriptId}/status`
+}
+
+export function getTrustTranscriptDetailsUrl(transcriptId) {
+  return `${apiBaseUrl}/api/v1/trust/transcripts/${transcriptId}/details`
+}
+
+export function getTrustTranscriptActionUrl(transcriptId, action) {
+  return `${apiBaseUrl}/api/v1/trust/transcripts/${transcriptId}/${action}`
+}
+
+export function getDecisionRecommendationUrl(decisionId) {
+  return `${apiBaseUrl}/api/v1/decisions/${decisionId}/recommendation`
+}
+
+export function getDecisionReviewUrl(decisionId) {
+  return `${apiBaseUrl}/api/v1/decisions/${decisionId}/review`
+}
+
+export function getDecisionSnapshotUrl(decisionId) {
+  return `${apiBaseUrl}/api/v1/decisions/${decisionId}/snapshot`
+}
+
+export function getDecisionAgentDetailsUrl(decisionId) {
+  return `${apiBaseUrl}/api/v1/decisions/${decisionId}/agent-details`
+}
+
+export function getWorkProjectionJobUrl(jobId) {
+  return `${workProjectionJobsUrl}/${jobId}`
+}
+
+export function getWorkProjectionJobRetryUrl(jobId) {
+  return `${workProjectionJobsUrl}/${jobId}/retry`
+}
+
+export function getWorkProjectionJobCancelUrl(jobId) {
+  return `${workProjectionJobsUrl}/${jobId}/cancel`
 }
 
 export function toDocumentQueueItem(item) {
@@ -175,6 +229,11 @@ export function toDocumentQueueItem(item) {
     confidence: Number(item?.confidence) || 0,
     uploadSource: item?.uploadSource || item?.source || 'Unknown source',
     status: item?.status || 'received_not_indexed',
+    documentStatus: item?.documentStatus || item?.status || '',
+    transcriptStatus: item?.transcriptStatus || '',
+    latestRunStatus: item?.latestRunStatus || item?.latestRun?.status || '',
+    reason: item?.reason || item?.issueLabel || item?.failureMessage || '',
+    suggestedAction: item?.suggestedAction || '',
     trustFlag: Boolean(item?.trustFlag),
     receivedAt: item?.receivedAt || item?.uploadedAt || null,
   }

@@ -6,12 +6,28 @@ import WorkItemRow from '../components/WorkItemRow'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, buildWorkSummary, sortWorkItems } from '../lib/studentWorkflow'
-import { getWorkErrorMessage, normalizeWorkItems, normalizeWorkSummary, workItemsUrl, workSummaryUrl } from '../lib/workApi'
+import {
+  getWorkTodayLatestOrchestrationUrl,
+  getWorkTodayRecommendationUrl,
+  getWorkTodayRouteUrl,
+  getWorkErrorMessage,
+  normalizeTodayBoardGroups,
+  normalizeTodayWorkItems,
+  normalizeWorkItems,
+  normalizeWorkSummary,
+  workTodayBoardUrl,
+  workItemsUrl,
+  workSummaryUrl,
+  workTodayOrchestrateUrl,
+  workTodayUrl,
+} from '../lib/workApi'
 
 const initialState = {
   summary: null,
   items: [],
+  boardGroups: [],
   isLoading: false,
+  hasLoaded: false,
   error: '',
   source: 'derived',
 }
@@ -97,7 +113,15 @@ export default function TodaysWorkPage() {
   const [activeWorkTab, setActiveWorkTab] = useState('attention')
   const [attentionQuery, setAttentionQuery] = useState('')
   const [actionError, setActionError] = useState('')
+  const [actionDetail, setActionDetail] = useState('')
   const [activeActionId, setActiveActionId] = useState('')
+  const [activeRouteId, setActiveRouteId] = useState('')
+  const [activeRecommendationId, setActiveRecommendationId] = useState('')
+  const [routeNotes, setRouteNotes] = useState({})
+  const [routeRecommendations, setRouteRecommendations] = useState({})
+  const [isOrchestrating, setIsOrchestrating] = useState(false)
+  const [isLoadingLatestOrchestration, setIsLoadingLatestOrchestration] = useState(false)
+  const [orchestrationRun, setOrchestrationRun] = useState(null)
 
   const derivedItems = useMemo(() => sortWorkItems(buildWorkItemsFromStudents(students)), [students])
   const derivedSummary = useMemo(() => buildWorkSummary(derivedItems), [derivedItems])
@@ -112,32 +136,68 @@ export default function TodaysWorkPage() {
     }))
 
     try {
-      const [summaryResponse, itemsResponse] = await Promise.all([
-        fetchWithTenantAuth(workSummaryUrl),
-        fetchWithTenantAuth(workItemsUrl),
+      let items = []
+      let boardGroups = []
+      let summary = null
+      let source = 'live'
+
+      const [todayResponse, boardResponse] = await Promise.all([
+        fetchWithTenantAuth(`${workTodayUrl}?limit=100`),
+        fetchWithTenantAuth(`${workTodayBoardUrl}?limit=100`),
+      ])
+      const [todayPayload, boardPayload] = await Promise.all([
+        todayResponse.json().catch(() => ({})),
+        boardResponse.json().catch(() => ({})),
       ])
 
-      const summaryPayload = await summaryResponse.json().catch(() => ({}))
-      const itemsPayload = await itemsResponse.json().catch(() => ({}))
+      if (todayResponse.ok) {
+        items = sortWorkItems(normalizeTodayWorkItems(todayPayload))
+        if (boardResponse.ok) {
+          boardGroups = normalizeTodayBoardGroups(boardPayload).map((group) => ({
+            ...group,
+            items: sortWorkItems(group.items),
+          }))
+        }
+        summary = buildWorkSummary(items)
+        source = 'live'
+      } else if (todayResponse.status === 404) {
+        const [summaryResponse, itemsResponse] = await Promise.all([
+          fetchWithTenantAuth(workSummaryUrl),
+          fetchWithTenantAuth(workItemsUrl),
+        ])
 
-      if (!summaryResponse.ok || !itemsResponse.ok) {
-        const response = !summaryResponse.ok ? summaryResponse : itemsResponse
-        const payload = !summaryResponse.ok ? summaryPayload : itemsPayload
-        throw new Error(getWorkErrorMessage(response, payload, 'Unable to load today\'s work.'))
+        const summaryPayload = await summaryResponse.json().catch(() => ({}))
+        const itemsPayload = await itemsResponse.json().catch(() => ({}))
+
+        if (!summaryResponse.ok || !itemsResponse.ok) {
+          const response = !summaryResponse.ok ? summaryResponse : itemsResponse
+          const payload = !summaryResponse.ok ? summaryPayload : itemsPayload
+          throw new Error(getWorkErrorMessage(response, payload, 'Unable to load today\'s work.'))
+        }
+
+        summary = normalizeWorkSummary(summaryPayload)
+        items = sortWorkItems(normalizeWorkItems(itemsPayload))
+        source = 'live'
+      } else {
+        throw new Error(getWorkErrorMessage(todayResponse, todayPayload, 'Unable to load today\'s work.'))
       }
 
       setState({
-        summary: normalizeWorkSummary(summaryPayload),
-        items: sortWorkItems(normalizeWorkItems(itemsPayload)),
+        summary,
+        items,
+        boardGroups,
         isLoading: false,
+        hasLoaded: true,
         error: '',
-        source: 'live',
+        source,
       })
     } catch (error) {
       setState({
         summary: derivedSummary,
         items: derivedItems,
+        boardGroups: [],
         isLoading: false,
+        hasLoaded: true,
         error: error.message || '',
         source: 'derived',
       })
@@ -154,8 +214,16 @@ export default function TodaysWorkPage() {
     loadWork()
   }, [loadWork])
 
-  const activeItems = state.source === 'live' ? state.items : derivedItems
-  const activeSummary = state.source === 'live' ? (state.summary || derivedSummary) : derivedSummary
+  const isInitialWorkLoading = state.isLoading && !state.hasLoaded
+  const activeItems = state.hasLoaded ? state.items : []
+  const activeSummary = state.hasLoaded ? (state.summary || buildWorkSummary(activeItems)) : buildWorkSummary([])
+  const liveBoardTabs = useMemo(() => state.boardGroups.map((group) => ({
+    key: group.key,
+    label: group.label,
+    subtitle: `Backend-grouped queue bucket with ${group.total || group.items.length} student${(group.total || group.items.length) === 1 ? '' : 's'}.`,
+    routeHint: group.routeHint,
+    items: group.items,
+  })), [state.boardGroups])
   const groupedItems = useMemo(() => groupItems(activeItems), [activeItems])
   const attentionItems = useMemo(() => {
     const search = attentionQuery.trim().toLowerCase()
@@ -179,7 +247,7 @@ export default function TodaysWorkPage() {
   const workflowFunnel = useMemo(() => buildWorkflowFunnel(activeItems, activeSummary), [activeItems, activeSummary])
   const priorityMix = useMemo(() => buildPriorityMix(activeItems), [activeItems])
   const blockerMix = useMemo(() => buildBlockerMix(activeItems), [activeItems])
-  const workTabs = useMemo(() => ([
+  const fallbackTabs = useMemo(() => ([
     {
       key: 'attention',
       label: 'Needs attention now',
@@ -205,7 +273,14 @@ export default function TodaysWorkPage() {
       items: groupedItems.exceptions,
     },
   ]), [attentionItems, groupedItems.close, groupedItems.exceptions, groupedItems.ready])
+  const workTabs = state.source === 'live' && liveBoardTabs.length ? liveBoardTabs : fallbackTabs
   const activeTab = workTabs.find((tab) => tab.key === activeWorkTab) || workTabs[0]
+
+  useEffect(() => {
+    if (workTabs.length && !workTabs.some((tab) => tab.key === activeWorkTab)) {
+      setActiveWorkTab(workTabs[0].key)
+    }
+  }, [activeWorkTab, workTabs])
 
   async function handleResolveBlocker(item) {
     const primaryBlocker = item.blockingItems?.[0]
@@ -213,6 +288,7 @@ export default function TodaysWorkPage() {
 
     setActiveActionId(item.id)
     setActionError('')
+    setActionDetail('')
 
     try {
       await updateChecklistItemStatus({
@@ -228,121 +304,322 @@ export default function TodaysWorkPage() {
     }
   }
 
+  function handleRouteNoteChange(item, value) {
+    setRouteNotes((current) => ({
+      ...current,
+      [item.studentId]: value,
+    }))
+  }
+
+  async function handleRecommendRoute(item) {
+    if (!item?.studentId) return
+
+    setActiveRecommendationId(item.id)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const response = await fetchWithTenantAuth(getWorkTodayRecommendationUrl(item.studentId))
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getWorkErrorMessage(response, payload, 'Unable to load route recommendation.'))
+      }
+
+      setRouteRecommendations((current) => ({
+        ...current,
+        [item.studentId]: payload,
+      }))
+      setActionDetail(payload?.reason || 'Route recommendation loaded.')
+    } catch (error) {
+      setActionError(error.message || 'Unable to load route recommendation.')
+    } finally {
+      setActiveRecommendationId('')
+    }
+  }
+
+  async function handleRouteWorkItem(item, nextAgent) {
+    if (!item?.studentId) return
+
+    setActiveRouteId(item.id)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const note = (routeNotes[item.studentId] || '').trim()
+      const response = await fetchWithTenantAuth(getWorkTodayRouteUrl(item.studentId), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nextAgent,
+          ...(note ? { note } : {}),
+        }),
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getWorkErrorMessage(response, payload, 'Unable to route work item.'))
+      }
+
+      setActionDetail(payload?.detail || `Work item routed to ${nextAgent}.`)
+      setRouteNotes((current) => ({
+        ...current,
+        [item.studentId]: '',
+      }))
+      setRouteRecommendations((current) => ({
+        ...current,
+        [item.studentId]: null,
+      }))
+      await loadWork()
+    } catch (error) {
+      setActionError(error.message || 'Unable to route work item.')
+    } finally {
+      setActiveRouteId('')
+    }
+  }
+
+  function applyOrchestrationPayload(payload, fallbackDetail) {
+    const groups = normalizeTodayBoardGroups(payload).map((group) => ({
+      ...group,
+      items: sortWorkItems(group.items),
+    }))
+
+    if (!groups.length) {
+      setActionDetail(fallbackDetail)
+      return
+    }
+
+    const items = sortWorkItems(groups.flatMap((group) => group.items))
+    setState((current) => ({
+      ...current,
+      summary: buildWorkSummary(items),
+      items,
+      boardGroups: groups,
+      isLoading: false,
+      hasLoaded: true,
+      error: '',
+      source: 'live',
+    }))
+    setOrchestrationRun(payload?.run || null)
+    setActionDetail(payload?.run?.result?.message || fallbackDetail)
+  }
+
+  async function handleOrchestrateWork() {
+    setIsOrchestrating(true)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const response = await fetchWithTenantAuth(`${workTodayOrchestrateUrl}?limit=100`, { method: 'POST' })
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getWorkErrorMessage(response, payload, 'Unable to orchestrate today\'s work.'))
+      }
+
+      applyOrchestrationPayload(payload, 'Today\'s work orchestration completed.')
+    } catch (error) {
+      setActionError(error.message || 'Unable to orchestrate today\'s work.')
+    } finally {
+      setIsOrchestrating(false)
+    }
+  }
+
+  async function handleLoadLatestOrchestration() {
+    setIsLoadingLatestOrchestration(true)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const response = await fetchWithTenantAuth(getWorkTodayLatestOrchestrationUrl())
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getWorkErrorMessage(response, payload, 'Unable to load the latest orchestration.'))
+      }
+
+      applyOrchestrationPayload(payload, 'Latest orchestration loaded.')
+    } catch (error) {
+      setActionError(error.message || 'Unable to load the latest orchestration.')
+    } finally {
+      setIsLoadingLatestOrchestration(false)
+    }
+  }
+
+  async function handleRouteActiveBucket() {
+    if (!activeTab?.routeHint?.nextAgent || !activeTab.items?.length) return
+
+    setActiveRouteId(activeTab.key)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const routeNote = activeTab.routeHint.reason || `Bucket route from ${activeTab.label}.`
+      await Promise.all(activeTab.items.map(async (item) => {
+        if (!item?.studentId) return
+        const response = await fetchWithTenantAuth(getWorkTodayRouteUrl(item.studentId), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            nextAgent: activeTab.routeHint.nextAgent,
+            note: routeNote,
+          }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(getWorkErrorMessage(response, payload, `Unable to route ${item.studentName || item.studentId}.`))
+        }
+      }))
+
+      setActionDetail(`${activeTab.items.length} work item${activeTab.items.length === 1 ? '' : 's'} routed to ${activeTab.routeHint.nextAgent}.`)
+      await loadWork()
+    } catch (error) {
+      setActionError(error.message || 'Unable to route this bucket.')
+    } finally {
+      setActiveRouteId('')
+    }
+  }
+
   return (
     <div className="page-wrap">
       <SectionHeader
         eyebrow="Daily operating system"
         title="Today's Work"
         subtitle="Start with what can move now: incomplete apps close to done, students ready for decision, and exceptions blocking release."
-        actions={<button type="button" className="secondary-button" onClick={loadWork}>Refresh work</button>}
+        actions={(
+          <div className="pill-row compact">
+            <button type="button" className="secondary-button" onClick={loadWork} disabled={state.isLoading}>
+              {state.isLoading ? 'Refreshing...' : 'Refresh work'}
+            </button>
+            <button type="button" className="secondary-button" onClick={handleLoadLatestOrchestration} disabled={isLoadingLatestOrchestration || isOrchestrating}>
+              {isLoadingLatestOrchestration ? 'Loading...' : 'Load latest orchestration'}
+            </button>
+            <button type="button" className="primary-button" onClick={handleOrchestrateWork} disabled={isOrchestrating || isLoadingLatestOrchestration}>
+              {isOrchestrating ? 'Orchestrating...' : 'Orchestrate work'}
+            </button>
+          </div>
+        )}
       />
 
-      <section className="stats-grid">
-        {summaryCards.map((stat) => <StatCard key={stat.label} stat={stat} />)}
-      </section>
-
-      <section className="todays-insight-grid three-up">
-        <article className="panel chart-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Blocker mix</h3>
-              <p>See the reasons students are stuck so the team can attack the biggest bottlenecks first.</p>
-            </div>
-          </div>
-          <div className="chart-box md">
-            {blockerMix.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={blockerMix} layout="vertical" margin={{ left: 8, right: 8 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" width={120} tickLine={false} axisLine={false} />
-                  <Tooltip />
-                  <Bar dataKey="value" radius={[0, 8, 8, 0]} fill="#8e7cff" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="muted-copy">No blocker data is available yet.</p>
-            )}
-          </div>
-        </article>
-
-        <article className="panel chart-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Work funnel</h3>
-              <p>See where today&apos;s load is sitting across the operational path.</p>
-            </div>
-          </div>
-          <div className="chart-box md">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={workflowFunnel}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="step" tickLine={false} axisLine={false} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                <Tooltip />
-                <Area type="monotone" dataKey="count" stroke="#5b7cfa" fill="#5b7cfa22" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </article>
-
-        <article className="panel chart-panel">
-          <div className="panel-header">
-            <div>
-              <h3>Priority mix</h3>
-              <p>Know how much of the queue is truly urgent versus work that can wait.</p>
-            </div>
-          </div>
-          <div className="chart-box md">
-            {priorityMix.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={priorityMix} dataKey="value" nameKey="name" innerRadius={42} outerRadius={76} paddingAngle={4}>
-                    {priorityMix.map((entry, index) => <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="muted-copy">No priority data is available yet.</p>
-            )}
-          </div>
-          <div className="legend-list">
-            {priorityMix.map((item, index) => (
-              <div key={item.name} className="legend-row">
-                <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
-                <span>{item.name}</span>
-                <strong>{item.value}</strong>
-              </div>
-            ))}
-          </div>
-        </article>
-      </section>
-
-      {state.isLoading && !activeItems.length ? (
+      {isInitialWorkLoading ? (
         <section className="panel">
-          <p className="muted-copy">Loading today&apos;s work...</p>
+          <p className="muted-copy">Loading today's work...</p>
         </section>
-      ) : null}
+      ) : (
+        <>
+          <section className="stats-grid">
+            {summaryCards.map((stat) => <StatCard key={stat.label} stat={stat} />)}
+          </section>
 
-      <div className="work-tabs-stack">
-        <div className="tab-switcher">
-          {workTabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={`tab-button ${activeWorkTab === tab.key ? 'active-tab-button' : ''}`}
-              onClick={() => setActiveWorkTab(tab.key)}
-            >
-              <span>{tab.label}</span>
-              <strong>{tab.items.length}</strong>
-            </button>
-          ))}
-        </div>
+          <section className="todays-insight-grid three-up">
+            <article className="panel chart-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Blocker mix</h3>
+                  <p>See the reasons students are stuck so the team can attack the biggest bottlenecks first.</p>
+                </div>
+              </div>
+              <div className="chart-box md">
+                {blockerMix.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={blockerMix} layout="vertical" margin={{ left: 8, right: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="name" width={120} tickLine={false} axisLine={false} />
+                      <Tooltip />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]} fill="#8e7cff" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="muted-copy">No blocker data is available yet.</p>
+                )}
+              </div>
+            </article>
 
-        <section className="panel work-section-panel tabbed-work-panel">
+            <article className="panel chart-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Work funnel</h3>
+                  <p>See where today&apos;s load is sitting across the operational path.</p>
+                </div>
+              </div>
+              <div className="chart-box md">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={workflowFunnel}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="step" tickLine={false} axisLine={false} />
+                    <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="count" stroke="#5b7cfa" fill="#5b7cfa22" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </article>
+
+            <article className="panel chart-panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Priority mix</h3>
+                  <p>Know how much of the queue is truly urgent versus work that can wait.</p>
+                </div>
+              </div>
+              <div className="chart-box md">
+                {priorityMix.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={priorityMix} dataKey="value" nameKey="name" innerRadius={42} outerRadius={76} paddingAngle={4}>
+                        {priorityMix.map((entry, index) => <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />)}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="muted-copy">No priority data is available yet.</p>
+                )}
+              </div>
+              <div className="legend-list">
+                {priorityMix.map((item, index) => (
+                  <div key={item.name} className="legend-row">
+                    <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
+                    <span>{item.name}</span>
+                    <strong>{item.value}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          {state.isLoading && !activeItems.length ? (
+            <section className="panel">
+              <p className="muted-copy">Refreshing today's work...</p>
+            </section>
+          ) : null}
+
+          <div className="work-tabs-stack">
+            <div className="tab-switcher">
+              {workTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`tab-button ${activeWorkTab === tab.key ? 'active-tab-button' : ''}`}
+                  onClick={() => setActiveWorkTab(tab.key)}
+                >
+                  <span>{tab.label}</span>
+                  <strong>{tab.items.length}</strong>
+                </button>
+              ))}
+            </div>
+
+            <section className="panel work-section-panel tabbed-work-panel">
           <div className="pill-row compact">
-            <span className="tag">{state.source === 'live' ? 'Live work queue' : 'Derived from Student 360'}</span>
+            <span className="tag">{state.source === 'live' ? 'Live orchestrator queue' : 'Derived from Student 360'}</span>
+            {orchestrationRun?.runId ? <span className="tag">Run: {orchestrationRun.runId}</span> : null}
+            {orchestrationRun?.result?.code ? <span className="tag">Outcome: {orchestrationRun.result.code}</span> : null}
             {studentsError ? <span className="badge risk-high">{studentsError}</span> : null}
           </div>
           <div className="panel-header">
@@ -350,12 +627,31 @@ export default function TodaysWorkPage() {
               <h3>{activeTab?.label}</h3>
               <p>{activeTab?.subtitle}</p>
             </div>
+            {activeTab?.routeHint?.nextAgent ? (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleRouteActiveBucket}
+                disabled={activeRouteId === activeTab.key || !activeTab.items.length}
+              >
+                {activeRouteId === activeTab.key ? 'Routing...' : activeTab.routeHint.actionLabel || 'Route bucket'}
+              </button>
+            ) : null}
           </div>
 
+          {activeTab?.routeHint ? (
+            <div className="callout-card accent-soft">
+              <h4>Bucket route hint</h4>
+              <p>{activeTab.routeHint.reason || 'Backend did not provide a route reason.'}</p>
+              {activeTab.routeHint.nextAgent ? <span className="tag">Next: {activeTab.routeHint.nextAgent}</span> : null}
+            </div>
+          ) : null}
+
           {actionError ? <p className="auth-error">{actionError}</p> : null}
+          {actionDetail ? <p className="muted-copy">{actionDetail}</p> : null}
           {state.error ? <p className="muted-copy">{state.error}</p> : null}
 
-          {activeWorkTab === 'attention' ? (
+          {activeWorkTab === 'attention' && !(state.source === 'live' && liveBoardTabs.length) ? (
             <input
               className="filter-input"
               placeholder="Search this section by student, blocker, owner, or next action"
@@ -371,11 +667,20 @@ export default function TodaysWorkPage() {
                 item={item}
                 onResolvePrimaryAction={handleResolveBlocker}
                 isResolving={activeActionId === item.id}
+                onRouteWorkItem={state.source === 'live' ? handleRouteWorkItem : undefined}
+                onRecommendRoute={state.source === 'live' ? handleRecommendRoute : undefined}
+                isRouting={activeRouteId === item.id}
+                isLoadingRecommendation={activeRecommendationId === item.id}
+                routeNote={routeNotes[item.studentId] || ''}
+                routeRecommendation={routeRecommendations[item.studentId] || null}
+                onRouteNoteChange={handleRouteNoteChange}
               />
             )) : <p className="muted-copy">{activeWorkTab === 'attention' ? 'No students in this section match that search.' : 'No students in this section.'}</p>}
           </div>
-        </section>
-      </div>
+            </section>
+          </div>
+        </>
+      )}
     </div>
   )
 }

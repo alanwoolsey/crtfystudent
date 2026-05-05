@@ -25,6 +25,13 @@ function getNextBestAction(student) {
   return student?.recommendation?.nextBestAction || student?.nextBestAction || 'Review'
 }
 
+function formatPercentScore(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  if (Number.isNaN(number)) return '-'
+  return `${Math.round(number <= 1 ? number * 100 : number)}%`
+}
+
 export default function StudentProfilePage() {
   const { studentId } = useParams()
   const { students, isLoadingStudents, studentsError, loadStudentChecklist, updateChecklistItemStatus } = useStudentRecords()
@@ -241,8 +248,8 @@ export default function StudentProfilePage() {
           </div>
 
           <div className="metric-cluster profile-metrics">
-            <div><span>Fit score</span><strong>{hasSensitivityTier('academic_record') ? `${student.fitScore ?? '-'}${student.fitScore !== undefined && student.fitScore !== null ? '%' : ''}` : '-'}</strong></div>
-            <div><span>Deposit likelihood</span><strong>{student.depositLikelihood ?? '-'}{student.depositLikelihood !== undefined && student.depositLikelihood !== null ? '%' : ''}</strong></div>
+            <div><span>Fit score</span><strong>{hasSensitivityTier('academic_record') ? formatPercentScore(student.fitScore) : '-'}</strong></div>
+            <div><span>Deposit likelihood</span><strong>{formatPercentScore(student.depositLikelihood)}</strong></div>
             <div><span>Accepted credits</span><strong>{hasSensitivityTier('academic_record') ? (student.creditsAccepted ?? '-') : '-'}</strong></div>
             <div><span>Advisor</span><strong>{student.advisor || 'Unassigned'}</strong></div>
           </div>
@@ -389,7 +396,7 @@ export default function StudentProfilePage() {
             {(student.transcripts || []).map((transcript) => (
               <div key={transcript.id} className="stack-row">
                 <strong>{transcript.institution || transcript.source}</strong>
-                <span>{transcript.status} · Confidence {transcript.confidence ?? '-'}%</span>
+                <span>{transcript.status} - Confidence {formatPercentScore(transcript.confidence)}</span>
               </div>
             ))}
             </SensitivityGuard>
@@ -412,8 +419,8 @@ export default function StudentProfilePage() {
             </div>
           </div>
           <div className="metric-cluster profile-metrics">
-            <div><span>Deposit likelihood</span><strong>{student.depositLikelihood ?? '-'}%</strong></div>
-            <div><span>Fit score</span><strong>{student.fitScore ?? '-'}%</strong></div>
+            <div><span>Deposit likelihood</span><strong>{formatPercentScore(student.depositLikelihood)}</strong></div>
+            <div><span>Fit score</span><strong>{formatPercentScore(student.fitScore)}</strong></div>
             <div><span>Owner</span><strong>{student.advisor || 'Unassigned'}</strong></div>
             <div><span>Next action</span><strong>{student.recommendation?.nextBestAction || student.nextBestAction || 'Review'}</strong></div>
           </div>
@@ -442,7 +449,7 @@ export default function StudentProfilePage() {
             <div className="panel-header">
               <div>
                 <h3>{selectedTranscript.institution || selectedTranscript.source}</h3>
-                <p>{selectedTranscript.type} · {selectedTranscript.courses?.length || 0} courses</p>
+                <p>{selectedTranscript.type} - {selectedTranscript.courses?.length || 0} courses</p>
               </div>
               <button type="button" className="icon-button" onClick={() => setSelectedTranscript(null)} aria-label="Close transcript details">
                 <X size={18} />

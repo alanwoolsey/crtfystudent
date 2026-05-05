@@ -133,7 +133,7 @@ export default function AdmittedYieldPage() {
             <div className="metric-cluster">
               <div><span>Admit date</span><strong>{formatDate(item.admitDate)}</strong></div>
               <div><span>Deposit</span><strong>{item.depositStatus}</strong></div>
-              <div><span>Milestones</span><strong>{Math.round(item.milestoneCompletion * 100)}%</strong></div>
+              <div><span>Milestones</span><strong>{item.milestoneCompletion}%</strong></div>
             </div>
 
             <div className="student-blocker">

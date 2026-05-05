@@ -207,11 +207,6 @@ export default function DecisionStudioPage() {
             <div className="stack-row"><strong>Next action</strong><span>Admit, hold, request item, route to counselor, or sync to SIS.</span></div>
           </div>
         </div>
-        <div className="callout-card accent">
-          <span className="table-sub">Prototype rule</span>
-          <h4>No black-box recommendation ships without reasons</h4>
-          <p>Every outcome includes human-readable rationale, source evidence, confidence, and connector-ready payloads.</p>
-        </div>
       </section>
 
       {isLoading ? (
