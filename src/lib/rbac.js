@@ -10,6 +10,51 @@ export const ROLE_KEYS = {
   integrationService: ['integration_service'],
 }
 
+const ROLE_DEFAULT_PERMISSIONS = {
+  admissions_counselor: [
+    'view_student_360',
+    'edit_checklist',
+    'view_dashboards',
+  ],
+  admissions_processor: [
+    'view_student_360',
+    'edit_checklist',
+    'view_sensitive_docs',
+  ],
+  reviewer_evaluator: [
+    'view_student_360',
+    'view_decision_packet',
+  ],
+  decision_releaser_director: [
+    'view_student_360',
+    'view_decision_packet',
+    'release_decision',
+    'view_dashboards',
+  ],
+  trust_analyst: [
+    'view_student_360',
+    'view_trust_flags',
+    'manage_trust_cases',
+    'view_sensitive_docs',
+  ],
+  registrar_transfer_specialist: [
+    'view_student_360',
+    'view_sensitive_docs',
+  ],
+  financial_aid: [
+    'view_student_360',
+    'view_dashboards',
+  ],
+  read_only_leadership: [
+    'view_student_360',
+    'view_dashboards',
+  ],
+  integration_service: [
+    'manage_integrations',
+    'view_dashboards',
+  ],
+}
+
 function toArray(value) {
   return Array.isArray(value) ? value : []
 }
@@ -19,7 +64,11 @@ export function userRoles(currentUser) {
 }
 
 export function userPermissions(currentUser) {
-  return new Set(toArray(currentUser?.permissions))
+  const permissions = new Set(toArray(currentUser?.permissions))
+  userRoles(currentUser).forEach((role) => {
+    toArray(ROLE_DEFAULT_PERMISSIONS[role]).forEach((permission) => permissions.add(permission))
+  })
+  return permissions
 }
 
 export function userSensitivityTiers(currentUser) {

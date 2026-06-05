@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import SectionHeader from '../components/SectionHeader'
 import StatCard from '../components/StatCard'
 import WorkItemRow from '../components/WorkItemRow'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, buildWorkSummary, sortWorkItems } from '../lib/studentWorkflow'
@@ -125,41 +126,63 @@ export default function TodaysWorkPage() {
 
   const derivedItems = useMemo(() => sortWorkItems(buildWorkItemsFromStudents(students)), [students])
   const derivedSummary = useMemo(() => buildWorkSummary(derivedItems), [derivedItems])
+  const derivedItemsRef = useRef(derivedItems)
+  const derivedSummaryRef = useRef(derivedSummary)
+
+  useEffect(() => {
+    derivedItemsRef.current = derivedItems
+    derivedSummaryRef.current = derivedSummary
+  }, [derivedItems, derivedSummary])
 
   const loadWork = useCallback(async () => {
     if (!session?.access_token || !session?.tenant_id) return
 
     setState((current) => ({
       ...current,
+      ...(!current.hasLoaded && derivedItemsRef.current.length ? {
+        summary: derivedSummaryRef.current,
+        items: derivedItemsRef.current,
+        boardGroups: [],
+        hasLoaded: true,
+        source: 'derived',
+      } : {}),
       isLoading: true,
       error: '',
     }))
 
     try {
       let items = []
-      let boardGroups = []
       let summary = null
-      let source = 'live'
 
-      const [todayResponse, boardResponse] = await Promise.all([
-        fetchWithTenantAuth(`${workTodayUrl}?limit=100`),
-        fetchWithTenantAuth(`${workTodayBoardUrl}?limit=100`),
-      ])
-      const [todayPayload, boardPayload] = await Promise.all([
-        todayResponse.json().catch(() => ({})),
-        boardResponse.json().catch(() => ({})),
-      ])
+      const todayResponse = await fetchWithTenantAuth(`${workTodayUrl}?limit=100`)
+      const todayPayload = await todayResponse.json().catch(() => ({}))
 
       if (todayResponse.ok) {
         items = sortWorkItems(normalizeTodayWorkItems(todayPayload))
-        if (boardResponse.ok) {
-          boardGroups = normalizeTodayBoardGroups(boardPayload).map((group) => ({
-            ...group,
-            items: sortWorkItems(group.items),
-          }))
-        }
         summary = buildWorkSummary(items)
-        source = 'live'
+
+        setState({
+          summary,
+          items,
+          boardGroups: [],
+          isLoading: false,
+          hasLoaded: true,
+          error: '',
+          source: 'live',
+        })
+
+        fetchWithTenantAuth(`${workTodayBoardUrl}?limit=100`)
+          .then(async (boardResponse) => {
+            const boardPayload = await boardResponse.json().catch(() => ({}))
+            if (!boardResponse.ok) return
+            const boardGroups = normalizeTodayBoardGroups(boardPayload).map((group) => ({
+              ...group,
+              items: sortWorkItems(group.items),
+            }))
+            setState((current) => current.source === 'live' ? { ...current, boardGroups } : current)
+          })
+          .catch(() => {})
+        return
       } else if (todayResponse.status === 404) {
         const [summaryResponse, itemsResponse] = await Promise.all([
           fetchWithTenantAuth(workSummaryUrl),
@@ -177,24 +200,23 @@ export default function TodaysWorkPage() {
 
         summary = normalizeWorkSummary(summaryPayload)
         items = sortWorkItems(normalizeWorkItems(itemsPayload))
-        source = 'live'
+        setState({
+          summary,
+          items,
+          boardGroups: [],
+          isLoading: false,
+          hasLoaded: true,
+          error: '',
+          source: 'live',
+        })
+        return
       } else {
         throw new Error(getWorkErrorMessage(todayResponse, todayPayload, 'Unable to load today\'s work.'))
       }
-
-      setState({
-        summary,
-        items,
-        boardGroups,
-        isLoading: false,
-        hasLoaded: true,
-        error: '',
-        source,
-      })
     } catch (error) {
       setState({
-        summary: derivedSummary,
-        items: derivedItems,
+        summary: derivedSummaryRef.current,
+        items: derivedItemsRef.current,
         boardGroups: [],
         isLoading: false,
         hasLoaded: true,
@@ -202,7 +224,7 @@ export default function TodaysWorkPage() {
         source: 'derived',
       })
     }
-  }, [derivedItems, derivedSummary, fetchWithTenantAuth, session])
+  }, [fetchWithTenantAuth, session])
 
   useEffect(() => {
     if (!students.length && !isLoadingStudents && session?.access_token && session?.tenant_id) {
@@ -616,12 +638,20 @@ export default function TodaysWorkPage() {
             </div>
 
             <section className="panel work-section-panel tabbed-work-panel">
-          <div className="pill-row compact">
-            <span className="tag">{state.source === 'live' ? 'Live orchestrator queue' : 'Derived from Student 360'}</span>
-            {orchestrationRun?.runId ? <span className="tag">Run: {orchestrationRun.runId}</span> : null}
-            {orchestrationRun?.result?.code ? <span className="tag">Outcome: {orchestrationRun.result.code}</span> : null}
-            {studentsError ? <span className="badge risk-high">{studentsError}</span> : null}
-          </div>
+          <OperationalModeNotice
+            mode={state.source}
+            error={state.error || studentsError}
+            liveLabel="Live Today's Work"
+            derivedLabel="Derived from Student 360"
+            isLoading={state.isLoading}
+            onRetry={loadWork}
+          />
+          {(orchestrationRun?.runId || orchestrationRun?.result?.code) ? (
+            <div className="pill-row compact">
+              {orchestrationRun?.runId ? <span className="tag">Run: {orchestrationRun.runId}</span> : null}
+              {orchestrationRun?.result?.code ? <span className="tag">Outcome: {orchestrationRun.result.code}</span> : null}
+            </div>
+          ) : null}
           <div className="panel-header">
             <div>
               <h3>{activeTab?.label}</h3>
@@ -649,7 +679,6 @@ export default function TodaysWorkPage() {
 
           {actionError ? <p className="auth-error">{actionError}</p> : null}
           {actionDetail ? <p className="muted-copy">{actionDetail}</p> : null}
-          {state.error ? <p className="muted-copy">{state.error}</p> : null}
 
           {activeWorkTab === 'attention' && !(state.source === 'live' && liveBoardTabs.length) ? (
             <input

@@ -4,6 +4,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import { ArrowLeft, CheckCircle2, CircleDot, Mail, MapPin, Phone, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import TranscriptTimeline from '../components/TranscriptTimeline'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { useAuth } from '../context/AuthContext'
 import Can from '../components/Can'
@@ -12,6 +13,7 @@ import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
+import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
@@ -32,9 +34,153 @@ function formatPercentScore(value) {
   return `${Math.round(number <= 1 ? number * 100 : number)}%`
 }
 
+function getChecklistStatusLabel(status) {
+  if (status === 'complete') return 'Complete'
+  if (status === 'waived') return 'Waived'
+  if (status === 'needs_review') return 'Needs review'
+  if (status === 'received') return 'Received'
+  if (status === 'requested') return 'Requested'
+  if (status === 'blocked') return 'Blocked'
+  if (status === 'rejected') return 'Rejected'
+  if (status === 'expired') return 'Expired'
+  return 'Not started'
+}
+
+function getChecklistStatusClass(status) {
+  if (status === 'complete' || status === 'waived') return 'risk-low'
+  if (status === 'needs_review' || status === 'received' || status === 'blocked') return 'risk-medium'
+  if (status === 'rejected' || status === 'expired') return 'risk-high'
+  return 'neutral-badge'
+}
+
+function getChecklistActionLabel(status) {
+  if (status === 'needs_review' || status === 'received') return 'Mark reviewed'
+  if (status === 'blocked') return 'Clear block'
+  return 'Mark complete'
+}
+
+function formatTimelineTime(value) {
+  if (!value) return 'Time pending'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+function normalizeTimelinePayload(payload) {
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.events)
+        ? payload.events
+        : Array.isArray(payload?.timeline)
+          ? payload.timeline
+          : []
+
+  return items.map((item, index) => ({
+    id: item.id || item.eventId || `${item.type || 'event'}-${index}`,
+    type: item.type || item.eventType || item.category || 'event',
+    title: item.title || item.label || item.action || 'Admissions event',
+    description: item.description || item.summary || item.message || '',
+    occurredAt: item.occurredAt || item.occurred_at || item.createdAt || item.created_at || item.timestamp || '',
+    actor: item.actor?.name || item.actorName || item.actor || item.owner?.name || '',
+    source: item.source || item.system || item.entityType || '',
+    status: item.status || '',
+  }))
+}
+
+function buildDerivedTimeline(student, checklistStats, readiness) {
+  if (!student) return []
+
+  const events = [
+    {
+      id: 'derived-identity',
+      type: 'identity',
+      title: 'Student record loaded',
+      description: `${student.name || student.id} is in ${student.stage || 'an active admissions stage'}.`,
+      occurredAt: student.updatedAt || student.lastActivityAt || '',
+      actor: student.advisor || 'Admissions',
+      source: student.source || 'Student 360',
+      status: student.stage || '',
+    },
+  ]
+
+  if (student.source || student.campaign || student.population) {
+    events.push({
+      id: 'derived-source',
+      type: 'inquiry',
+      title: 'Inquiry/source captured',
+      description: [student.source, student.campaign, student.population].filter(Boolean).join(' - ') || 'Source attribution is available.',
+      occurredAt: student.createdAt || '',
+      actor: student.advisor || 'Admissions',
+      source: 'source_attribution',
+      status: student.population || '',
+    })
+  }
+
+  if (checklistStats.totalRequired) {
+    events.push({
+      id: 'derived-checklist',
+      type: 'checklist',
+      title: 'Checklist state computed',
+      description: `${checklistStats.completedCount} of ${checklistStats.totalRequired} required items complete; ${checklistStats.needsReviewCount} need review.`,
+      occurredAt: student.updatedAt || '',
+      actor: 'Checklist engine',
+      source: 'checklist',
+      status: checklistStats.oneItemAway ? 'One item away' : `${checklistStats.completionPercent}% complete`,
+    })
+  }
+
+  ;(student.transcripts || []).slice(0, 4).forEach((transcript, index) => {
+    events.push({
+      id: `derived-transcript-${transcript.id || index}`,
+      type: 'transcript',
+      title: transcript.institution || transcript.source || 'Transcript received',
+      description: transcript.notes || `${transcript.type || 'Document'} is ${transcript.status || 'available for review'}.`,
+      occurredAt: transcript.uploadedAt || transcript.updatedAt || '',
+      actor: transcript.owner || 'Document processing',
+      source: transcript.source || 'transcript',
+      status: transcript.status || '',
+    })
+  })
+
+  if (readiness?.state || readiness?.label) {
+    events.push({
+      id: 'derived-readiness',
+      type: 'readiness',
+      title: readiness.label || 'Readiness computed',
+      description: readiness.reason || 'Readiness state is available for review.',
+      occurredAt: student.updatedAt || '',
+      actor: 'Readiness service',
+      source: 'readiness',
+      status: readiness.state || readiness.label,
+    })
+  }
+
+  if (student.recommendation?.summary) {
+    events.push({
+      id: 'derived-recommendation',
+      type: 'decision',
+      title: student.recommendation.summary,
+      description: student.recommendation.fitNarrative || student.recommendation.nextBestAction || '',
+      occurredAt: student.updatedAt || '',
+      actor: 'Decision workspace',
+      source: 'decision',
+      status: student.recommendation.nextBestAction || '',
+    })
+  }
+
+  return events.sort((first, second) => {
+    const firstTime = new Date(first.occurredAt).getTime()
+    const secondTime = new Date(second.occurredAt).getTime()
+    if (Number.isNaN(firstTime) || Number.isNaN(secondTime)) return 0
+    return secondTime - firstTime
+  })
+}
+
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, updateChecklistItemStatus } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus } = useStudentRecords()
   const { session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
@@ -43,11 +189,15 @@ export default function StudentProfilePage() {
   const [checklistActionError, setChecklistActionError] = useState('')
   const [activeChecklistItemId, setActiveChecklistItemId] = useState('')
   const [liveReadiness, setLiveReadiness] = useState(null)
+  const [timelineEvents, setTimelineEvents] = useState([])
+  const [timelineMode, setTimelineMode] = useState('derived')
+  const [timelineError, setTimelineError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
   const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [studentId, students])
   const visibleTabs = useMemo(() => {
     const tabs = [
       { key: 'overview', label: 'Overview', allowed: hasAnyPermission(['view_student_360']) },
+      { key: 'timeline', label: 'Timeline', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'checklist', label: 'Checklist', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'documents', label: 'Documents', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'evaluation', label: 'Evaluation', allowed: hasSensitivityTier('academic_record') },
@@ -77,14 +227,14 @@ export default function StudentProfilePage() {
         throw new Error(payload?.detail || payload?.message || 'Unable to load student.')
       }
 
-      setStudentDetail(payload)
+      setStudentDetail(normalizeStudentDetailPayload(payload))
     } catch (error) {
       setDetailError(error.message || 'Unable to load student.')
       setStudentDetail(null)
     } finally {
       setIsLoadingDetail(false)
     }
-  }, [fetchWithTenantAuth, session, studentId])
+  }, [fetchWithTenantAuth, normalizeStudentDetailPayload, session, studentId])
 
   useEffect(() => {
     loadStudentDetail()
@@ -113,18 +263,12 @@ export default function StudentProfilePage() {
           throw new Error(getReadinessErrorMessage(response, payload, 'Unable to load readiness.'))
         }
 
-        setLiveReadiness({
-          state: payload.readinessState || payload.state || 'in_progress',
-          label: payload.reasonLabel || payload.label || 'Readiness',
-          tone: payload.readinessState === 'ready_for_decision'
-            ? 'low'
-            : payload.readinessState === 'blocked_by_trust'
-              ? 'high'
-              : payload.readinessState === 'blocked_by_review'
-                ? 'medium'
-                : 'neutral',
-          reason: payload.reasonLabel || payload.reason || '',
-        })
+        setLiveReadiness(
+          normalizeReadinessState(payload.state || payload.readinessState || READINESS_STATES.inProgress, {
+            label: payload.label || payload.reasonLabel || 'Readiness',
+            reason: payload.reason || payload.reasonLabel || '',
+          }),
+        )
       } catch (error) {
         if (!String(error.message || '').includes('not available')) {
           setLiveReadiness(null)
@@ -136,6 +280,39 @@ export default function StudentProfilePage() {
   }, [fetchWithTenantAuth, session, studentId])
 
   const student = studentDetail || summaryStudent
+  const checklistStats = getChecklistStats(student)
+  const readiness = liveReadiness || getReadiness(student)
+  const derivedTimelineEvents = useMemo(
+    () => buildDerivedTimeline(student, checklistStats, readiness),
+    [checklistStats, readiness, student],
+  )
+  const displayTimelineEvents = timelineEvents.length ? timelineEvents : derivedTimelineEvents
+
+  const loadTimeline = useCallback(async () => {
+    if (!studentId || !session?.access_token || !session?.tenant_id) return
+
+    try {
+      const response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/students/${studentId}/timeline`)
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.message || 'Timeline endpoint is not available yet.')
+      }
+
+      const nextEvents = normalizeTimelinePayload(payload)
+      setTimelineEvents(nextEvents)
+      setTimelineMode(nextEvents.length ? 'live' : 'derived')
+      setTimelineError('')
+    } catch (error) {
+      setTimelineEvents([])
+      setTimelineMode('derived')
+      setTimelineError(error.message || 'Timeline endpoint is not available yet.')
+    }
+  }, [fetchWithTenantAuth, session, studentId])
+
+  useEffect(() => {
+    loadTimeline()
+  }, [loadTimeline])
 
   if ((isLoadingStudents || isLoadingDetail) && !studentDetail) {
     return (
@@ -175,9 +352,6 @@ export default function StudentProfilePage() {
   const headerSubtitle = programName === 'Transcript intake'
     ? 'Transcript intake'
     : `${programName} - Goal: ${student.institutionGoal || 'Not set'}`
-  const checklistStats = getChecklistStats(student)
-  const readiness = liveReadiness || getReadiness(student)
-
   async function handleChecklistAction(item) {
     setChecklistActionError('')
     setActiveChecklistItemId(item.id)
@@ -245,6 +419,10 @@ export default function StudentProfilePage() {
             <span><Phone size={16} /> {student.phone || 'No phone on file'}</span>
             <span><MapPin size={16} /> {student.city || 'Location pending'}</span>
             <span>ID {student.id}</span>
+            <span>Source {student.source || 'Not set'}</span>
+            <span>Population {student.population || 'Not set'}</span>
+            <span>Last activity {student.lastActivity || student.updatedAt || 'Pending'}</span>
+            <span>Next action {getNextBestAction(student)}</span>
           </div>
 
           <div className="metric-cluster profile-metrics">
@@ -255,6 +433,50 @@ export default function StudentProfilePage() {
           </div>
         </article>
       </section>
+      ) : null}
+
+      {activeTab === 'timeline' ? (
+        <section className="dashboard-grid profile-grid">
+          <article className="panel">
+            <OperationalModeNotice
+              mode={timelineMode}
+              liveLabel="Live timeline"
+              derivedLabel="Derived timeline"
+              error={timelineMode === 'derived' ? timelineError : ''}
+              onRetry={loadTimeline}
+            />
+            <div className="panel-header">
+              <div>
+                <h3>Admissions timeline</h3>
+                <p>Inquiry, source, checklist, document, transcript, trust, decision, yield, and handoff events in one record.</p>
+              </div>
+              <span className="badge neutral-badge">{displayTimelineEvents.length}</span>
+            </div>
+            <div className="timeline-list student360-timeline">
+              {displayTimelineEvents.map((event) => (
+                <div key={event.id} className="timeline-item">
+                  <div className="timeline-rail" />
+                  <div className="timeline-content">
+                    <div className="timeline-top">
+                      <div>
+                        <h4>{event.title}</h4>
+                        {event.description ? <p>{event.description}</p> : null}
+                      </div>
+                      {event.status ? <span className="badge neutral-badge">{event.status}</span> : null}
+                    </div>
+                    <div className="timeline-meta">
+                      <span>{formatTimelineTime(event.occurredAt)}</span>
+                      {event.actor ? <span>{event.actor}</span> : null}
+                      {event.source ? <span>{event.source}</span> : null}
+                      {event.type ? <span>{event.type}</span> : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {!displayTimelineEvents.length ? <p className="muted-copy">No timeline events are available yet.</p> : null}
+            </div>
+          </article>
+        </section>
       ) : null}
 
       {activeTab === 'checklist' ? (
@@ -288,11 +510,11 @@ export default function StudentProfilePage() {
                     onClick={() => handleChecklistAction(item)}
                     disabled={activeChecklistItemId === item.id}
                   >
-                    {activeChecklistItemId === item.id ? 'Saving...' : item.status === 'needs_review' ? 'Mark reviewed' : 'Mark complete'}
+                    {activeChecklistItemId === item.id ? 'Saving...' : getChecklistActionLabel(item.status)}
                   </button>
                 ) : null}
-                <span className={`badge ${item.status === 'complete' ? 'risk-low' : item.status === 'needs_review' ? 'risk-medium' : 'neutral-badge'}`}>
-                  {item.status === 'needs_review' ? 'Needs review' : item.status === 'complete' ? 'Complete' : 'Missing'}
+                <span className={`badge ${getChecklistStatusClass(item.status)}`}>
+                  {getChecklistStatusLabel(item.status)}
                 </span>
               </div>
             ))}

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, PieChart, Pie, Cell } from 'recharts'
 import StatCard from '../components/StatCard'
 import { useAuth } from '../context/AuthContext'
+import { useStudentRecords } from '../context/StudentRecordsContext'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 
 const colors = ['#5b7cfa', '#18b7a6', '#8e7cff', '#ff8b8b']
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
@@ -29,8 +31,32 @@ function retryButton(onClick) {
   )
 }
 
+function getDisplayValue(value, fallback = 'Not set') {
+  if (value === null || value === undefined || value === '') return fallback
+  if (typeof value === 'string' || typeof value === 'number') return String(value)
+  if (typeof value === 'object') {
+    if (typeof value.name === 'string') return value.name
+    if (typeof value.label === 'string') return value.label
+    if (typeof value.title === 'string') return value.title
+  }
+  return fallback
+}
+
+function countBy(items, resolver) {
+  const counts = new Map()
+  items.forEach((item) => {
+    const key = getDisplayValue(resolver(item))
+    counts.set(key, (counts.get(key) || 0) + 1)
+  })
+
+  return Array.from(counts.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((first, second) => second.count - first.count || first.label.localeCompare(second.label))
+}
+
 export default function DashboardPage() {
   const { session, fetchWithTenantAuth } = useAuth()
+  const { students, studentsError, loadStudents } = useStudentRecords()
   const [statsState, setStatsState] = useState(initialSectionState)
   const [funnelState, setFunnelState] = useState(initialSectionState)
   const [routingMixState, setRoutingMixState] = useState(initialSectionState)
@@ -94,6 +120,12 @@ export default function DashboardPage() {
   }, [loadFunnel, loadRoutingMix, loadStats])
 
   const hasStats = useMemo(() => statsState.data.length > 0, [statsState.data])
+  const leadershipCounts = useMemo(() => ([
+    { key: 'stage', label: 'By stage', items: countBy(students, (student) => student.stage) },
+    { key: 'owner', label: 'By owner', items: countBy(students, (student) => student.advisor || student.owner) },
+    { key: 'source', label: 'By source', items: countBy(students, (student) => student.source) },
+    { key: 'population', label: 'By population', items: countBy(students, (student) => student.population) },
+  ]), [students])
 
   return (
     <div className="page-wrap">
@@ -118,6 +150,39 @@ export default function DashboardPage() {
             </article>
           )
         ) : null}
+      </section>
+
+      <section className="panel">
+        <OperationalModeNotice
+          mode={students.length && !studentsError ? 'live' : 'derived'}
+          liveLabel="Live student counts"
+          derivedLabel="Counts pending"
+          error={studentsError || 'Student count data will appear after Student 360 records load.'}
+          onRetry={() => loadStudents().catch(() => {})}
+        />
+        <div className="panel-header">
+          <div>
+            <h3>Admissions CRM core counts</h3>
+            <p>Leadership rollups by lifecycle stage, owner, source, and population.</p>
+          </div>
+          <span className="badge neutral-badge">{students.length} records</span>
+        </div>
+        <div className="dashboard-grid four-up">
+          {leadershipCounts.map((group) => (
+            <div key={group.key} className="preview-card">
+              <span className="table-sub">{group.label}</span>
+              <div className="stack-list compact-stack">
+                {group.items.slice(0, 5).map((item) => (
+                  <div key={`${group.key}-${item.label}`} className="stack-row">
+                    <strong>{item.label}</strong>
+                    <span>{item.count}</span>
+                  </div>
+                ))}
+                {!group.items.length ? <p className="muted-copy">No records yet.</p> : null}
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="main-layout">

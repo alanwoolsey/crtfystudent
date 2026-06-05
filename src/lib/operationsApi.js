@@ -1,3 +1,5 @@
+import { PRIORITY_BANDS, READINESS_STATES, normalizeReadinessState } from './admissionsWorkflow'
+
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
 export const incompleteQueueUrl = `${apiBaseUrl}/api/v1/incomplete`
@@ -30,14 +32,6 @@ export function getApiErrorMessage(response, payload, fallback) {
   return payload?.error || payload?.detail || payload?.message || fallback
 }
 
-function normalizeReadinessState(state) {
-  if (state === 'ready_for_decision') return { state, label: 'Ready for decision', tone: 'low' }
-  if (state === 'blocked_by_trust') return { state, label: 'Blocked by trust', tone: 'high' }
-  if (state === 'blocked_by_review') return { state, label: 'Needs review', tone: 'medium' }
-  if (state === 'blocked_by_missing_item') return { state, label: 'Missing items', tone: 'neutral' }
-  return { state: state || 'in_progress', label: 'In progress', tone: 'neutral' }
-}
-
 function normalizePercentScore(value) {
   if (value === null || value === undefined || value === '') return 0
   const number = Number(value)
@@ -51,7 +45,7 @@ export function toWorkItemFromIncomplete(item, activeView) {
   const missingItemsCount = Number(item?.missingItemsCount ?? missingItems.length) || 0
   const completionPercent = Number(item?.completionPercent) || Math.max(0, Math.min(100, 100 - (missingItemsCount * 20)))
   const priorityScore = Number(item?.priorityScore) || 0
-  const priority = item?.priority || (priorityScore >= 85 ? 'urgent' : priorityScore >= 65 ? 'today' : 'soon')
+  const priority = item?.priority || (priorityScore >= 85 ? PRIORITY_BANDS.urgent : priorityScore >= 65 ? PRIORITY_BANDS.today : PRIORITY_BANDS.soon)
   const readiness = normalizeReadinessState(item?.readinessState)
 
   return {
@@ -102,9 +96,9 @@ export function toWorkItemFromReady(item) {
     program: item?.program || 'Program pending',
     institutionGoal: item?.campus || '',
     completionPercent: Number(item?.completionPercent) || 100,
-    priority: item?.daysWaiting > 3 ? 'urgent' : item?.daysWaiting > 1 ? 'today' : 'soon',
+    priority: item?.daysWaiting > 3 ? PRIORITY_BANDS.urgent : item?.daysWaiting > 1 ? PRIORITY_BANDS.today : PRIORITY_BANDS.soon,
     section: 'ready',
-    readiness: normalizeReadinessState('ready_for_decision'),
+    readiness: normalizeReadinessState(READINESS_STATES.readyForDecision),
     owner: item?.assignedReviewer || { id: 'unassigned', name: 'Unassigned reviewer' },
     reasonToAct: {
       label: item?.reviewSlaHours ? `${item.reviewSlaHours}h review SLA` : 'Ready for evaluator review',

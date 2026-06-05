@@ -1,3 +1,14 @@
+import {
+  CHECKLIST_BLOCKING_STATUSES,
+  CHECKLIST_STATUSES,
+  PRIORITY_BANDS,
+  READINESS_STATES,
+  REASON_TO_ACT_CODES,
+  WORK_SECTIONS,
+  isChecklistStatusComplete,
+  normalizeReadinessState,
+} from './admissionsWorkflow'
+
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
 }
@@ -25,9 +36,14 @@ export function normalizeChecklistItems(student) {
       status = item?.done ? 'complete' : 'missing'
     }
 
-    if (status === 'done') status = 'complete'
-    if (status === 'received') status = 'needs_review'
-    if (status === 'received but not reviewed') status = 'needs_review'
+    if (!status) {
+      status = item?.done ? CHECKLIST_STATUSES.complete : CHECKLIST_STATUSES.notStarted
+    }
+
+    if (status === 'done') status = CHECKLIST_STATUSES.complete
+    if (status === 'missing') status = CHECKLIST_STATUSES.notStarted
+    if (status === CHECKLIST_STATUSES.received) status = CHECKLIST_STATUSES.needsReview
+    if (status === 'received but not reviewed') status = CHECKLIST_STATUSES.needsReview
 
     return {
       id: item?.id || `${student?.id || 'student'}-check-${index}`,
@@ -35,7 +51,7 @@ export function normalizeChecklistItems(student) {
       label: item?.label || item?.name || `Checklist item ${index + 1}`,
       required: item?.required !== false,
       status,
-      done: status === 'complete',
+      done: isChecklistStatusComplete(status),
       sourceDocumentId: item?.sourceDocumentId || null,
       sourceConfidence: item?.sourceConfidence ?? null,
     }
@@ -45,9 +61,10 @@ export function normalizeChecklistItems(student) {
 export function getChecklistStats(student) {
   const items = normalizeChecklistItems(student)
   const requiredItems = items.filter((item) => item.required)
-  const completedItems = requiredItems.filter((item) => item.status === 'complete')
-  const needsReviewItems = requiredItems.filter((item) => item.status === 'needs_review')
-  const missingItems = requiredItems.filter((item) => item.status === 'missing')
+  const completedItems = requiredItems.filter((item) => isChecklistStatusComplete(item.status))
+  const needsReviewItems = requiredItems.filter((item) => item.status === CHECKLIST_STATUSES.needsReview)
+  const missingItems = requiredItems.filter((item) => item.status === CHECKLIST_STATUSES.notStarted || item.status === CHECKLIST_STATUSES.requested || item.status === CHECKLIST_STATUSES.missing)
+  const blockingItems = requiredItems.filter((item) => CHECKLIST_BLOCKING_STATUSES.has(item.status))
   const totalRequired = requiredItems.length
   const completionPercent = totalRequired ? Math.round((completedItems.length / totalRequired) * 100) : 0
 
@@ -59,7 +76,7 @@ export function getChecklistStats(student) {
     missingCount: missingItems.length,
     completionPercent,
     oneItemAway: totalRequired > 0 && completedItems.length === totalRequired - 1,
-    blockingItems: [...needsReviewItems, ...missingItems],
+    blockingItems,
   }
 }
 
@@ -68,23 +85,23 @@ function buildReasonToAct(student, checklistStats) {
   const risk = normalizeText(student?.risk)
 
   if (stage.includes('trust hold') || risk === 'high') {
-    return { code: 'trust_block', label: 'Trust review blocking release' }
+    return { code: REASON_TO_ACT_CODES.trustBlock, label: 'Trust review blocking release' }
   }
 
   if (checklistStats.oneItemAway) {
     const blocker = checklistStats.blockingItems[0]
-    return { code: 'missing_one_item', label: blocker ? `One item away: ${blocker.label}` : 'One item away from completion' }
+    return { code: REASON_TO_ACT_CODES.missingOneItem, label: blocker ? `One item away: ${blocker.label}` : 'One item away from completion' }
   }
 
   if (checklistStats.needsReviewCount > 0) {
-    return { code: 'needs_review', label: `${checklistStats.needsReviewCount} item${checklistStats.needsReviewCount === 1 ? '' : 's'} need review` }
+    return { code: REASON_TO_ACT_CODES.needsReview, label: `${checklistStats.needsReviewCount} item${checklistStats.needsReviewCount === 1 ? '' : 's'} need review` }
   }
 
   if (stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
-    return { code: 'ready_for_decision', label: 'Ready for decision' }
+    return { code: REASON_TO_ACT_CODES.readyForDecision, label: 'Ready for decision' }
   }
 
-  return { code: 'incomplete', label: `${checklistStats.missingCount || checklistStats.totalRequired} item${(checklistStats.missingCount || checklistStats.totalRequired) === 1 ? '' : 's'} still missing` }
+  return { code: REASON_TO_ACT_CODES.incomplete, label: `${checklistStats.missingCount || checklistStats.totalRequired} item${(checklistStats.missingCount || checklistStats.totalRequired) === 1 ? '' : 's'} still missing` }
 }
 
 export function getReadiness(student) {
@@ -93,64 +110,45 @@ export function getReadiness(student) {
   const risk = normalizeText(student?.risk)
 
   if (stage.includes('trust hold') || risk === 'high') {
-    return {
-      state: 'blocked_by_trust',
-      label: 'Blocked by trust',
-      tone: 'high',
-      reason: 'Trust review must clear before release.',
-    }
+    return normalizeReadinessState(READINESS_STATES.blockedByTrust)
   }
 
-  if (stage.includes('pending evidence') || checklistStats.needsReviewCount > 0) {
-    return {
-      state: 'blocked_by_review',
-      label: 'Needs review',
-      tone: 'medium',
-      reason: 'A document or requirement still needs staff review.',
-    }
+  if (stage.includes('pending evidence') || checklistStats.blockingItems.some((item) => item.status === CHECKLIST_STATUSES.blocked || item.status === CHECKLIST_STATUSES.rejected || item.status === CHECKLIST_STATUSES.expired)) {
+    return normalizeReadinessState(READINESS_STATES.blockedByDocument)
   }
 
-  if (checklistStats.missingCount > 0) {
-    return {
-      state: 'blocked_by_missing_item',
-      label: 'Missing items',
-      tone: 'neutral',
-      reason: `${checklistStats.missingCount} required item${checklistStats.missingCount === 1 ? '' : 's'} still missing.`,
-    }
+  if (checklistStats.needsReviewCount > 0 || checklistStats.blockingItems.some((item) => item.status === CHECKLIST_STATUSES.received)) {
+    return normalizeReadinessState(READINESS_STATES.blockedByReview)
+  }
+
+  if (checklistStats.blockingItems.length > 0) {
+    return normalizeReadinessState(READINESS_STATES.blockedByMissingItem, {
+      reason: `${checklistStats.blockingItems.length} required item${checklistStats.blockingItems.length === 1 ? '' : 's'} still blocking completion.`,
+    })
   }
 
   if (stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
-    return {
-      state: 'ready_for_decision',
-      label: 'Ready for decision',
-      tone: 'low',
-      reason: 'Required materials are in place for decision review.',
-    }
+    return normalizeReadinessState(READINESS_STATES.readyForDecision)
   }
 
-  return {
-    state: 'in_progress',
-    label: 'In progress',
-    tone: 'neutral',
-    reason: 'This record is still moving through completion work.',
-  }
+  return normalizeReadinessState(READINESS_STATES.inProgress)
 }
 
 function buildSuggestedAction(student, checklistStats, reasonToAct) {
-  if (reasonToAct.code === 'trust_block') {
+  if (reasonToAct.code === REASON_TO_ACT_CODES.trustBlock) {
     return { code: 'resolve_trust', label: 'Review trust evidence' }
   }
 
-  if (reasonToAct.code === 'ready_for_decision') {
+  if (reasonToAct.code === REASON_TO_ACT_CODES.readyForDecision) {
     return { code: 'open_decision', label: 'Open decision review' }
   }
 
-  if (reasonToAct.code === 'needs_review') {
+  if (reasonToAct.code === REASON_TO_ACT_CODES.needsReview) {
     const blocker = checklistStats.blockingItems[0]
     return { code: 'review_document', label: blocker ? `Review ${blocker.label}` : 'Review incoming items' }
   }
 
-  if (reasonToAct.code === 'missing_one_item') {
+  if (reasonToAct.code === REASON_TO_ACT_CODES.missingOneItem) {
     const blocker = checklistStats.blockingItems[0]
     return { code: 'clear_last_blocker', label: blocker ? `Clear ${blocker.label}` : 'Clear final blocker' }
   }
@@ -161,18 +159,18 @@ function buildSuggestedAction(student, checklistStats, reasonToAct) {
 function inferSection(student, checklistStats, reasonToAct) {
   const stage = normalizeText(student?.stage)
 
-  if (reasonToAct.code === 'trust_block' || stage.includes('pending evidence')) return 'exceptions'
-  if (reasonToAct.code === 'ready_for_decision') return 'ready'
-  if (checklistStats.oneItemAway || checklistStats.completionPercent >= 75) return 'close'
-  return 'attention'
+  if (reasonToAct.code === REASON_TO_ACT_CODES.trustBlock || stage.includes('pending evidence')) return WORK_SECTIONS.exceptions
+  if (reasonToAct.code === REASON_TO_ACT_CODES.readyForDecision) return WORK_SECTIONS.ready
+  if (checklistStats.oneItemAway || checklistStats.completionPercent >= 75) return WORK_SECTIONS.close
+  return WORK_SECTIONS.attention
 }
 
 function inferPriority(student, checklistStats, reasonToAct) {
   const fitScore = Number(student?.fitScore) || 0
 
-  if (reasonToAct.code === 'trust_block' || checklistStats.oneItemAway) return 'urgent'
-  if (reasonToAct.code === 'ready_for_decision' || fitScore >= 90 || checklistStats.completionPercent >= 75) return 'today'
-  return 'soon'
+  if (reasonToAct.code === REASON_TO_ACT_CODES.trustBlock || checklistStats.oneItemAway) return PRIORITY_BANDS.urgent
+  if (reasonToAct.code === REASON_TO_ACT_CODES.readyForDecision || fitScore >= 90 || checklistStats.completionPercent >= 75) return PRIORITY_BANDS.today
+  return PRIORITY_BANDS.soon
 }
 
 export function buildWorkItemFromStudent(student) {
@@ -246,7 +244,11 @@ export function buildWorkSummary(workItems) {
 }
 
 export function sortWorkItems(workItems) {
-  const priorityRank = { urgent: 0, today: 1, soon: 2 }
+  const priorityRank = {
+    [PRIORITY_BANDS.urgent]: 0,
+    [PRIORITY_BANDS.today]: 1,
+    [PRIORITY_BANDS.soon]: 2,
+  }
 
   return [...(Array.isArray(workItems) ? workItems : [])].sort((left, right) => {
     const priorityDelta = (priorityRank[left.priority] ?? 99) - (priorityRank[right.priority] ?? 99)

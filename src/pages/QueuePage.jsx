@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import ReadinessChip from '../components/ReadinessChip'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, sortWorkItems } from '../lib/studentWorkflow'
@@ -20,6 +21,11 @@ export default function QueuePage() {
   const [activeActionId, setActiveActionId] = useState('')
 
   const derivedItems = useMemo(() => sortWorkItems(buildWorkItemsFromStudents(students)), [students])
+  const derivedItemsRef = useRef(derivedItems)
+
+  useEffect(() => {
+    derivedItemsRef.current = derivedItems
+  }, [derivedItems])
 
   useEffect(() => {
     setQuery(searchParams.get('q') || '')
@@ -50,13 +56,13 @@ export default function QueuePage() {
       setWorkItems(sortWorkItems(normalizeWorkItems(payload)))
       setSource('live')
     } catch (nextError) {
-      setWorkItems(derivedItems)
+      setWorkItems(derivedItemsRef.current)
       setSource('derived')
       setError(nextError.message || 'Unable to load operations queue.')
     } finally {
       setIsLoading(false)
     }
-  }, [derivedItems, fetchWithTenantAuth, session])
+  }, [fetchWithTenantAuth, session])
 
   useEffect(() => {
     loadWorkItems()
@@ -128,10 +134,14 @@ export default function QueuePage() {
               </select>
             </label>
           </div>
-          <div className="pill-row compact">
-            <span className="tag">{source === 'live' ? 'Live operations queue' : 'Derived from student workflow'}</span>
-          </div>
-          {error ? <p className="muted-copy">{error}</p> : null}
+          <OperationalModeNotice
+            mode={source}
+            error={error}
+            liveLabel="Live operations queue"
+            derivedLabel="Derived from student workflow"
+            isLoading={isLoading}
+            onRetry={loadWorkItems}
+          />
         </div>
 
         {isLoading && !filteredItems.length ? <p className="muted-copy">Loading operations queue...</p> : null}

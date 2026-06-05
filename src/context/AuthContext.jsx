@@ -63,14 +63,58 @@ function getAuthErrorMessage(status, payload) {
 function normalizeSession(payload, username) {
   return {
     username,
-    tenant_id: payload.tenant_id,
-    tenant_name: payload.tenant_name,
-    tenant_code: payload.tenant_code,
+    tenant_id: payload.tenant_id || payload.tenantId,
+    tenant_name: payload.tenant_name || payload.tenantName,
+    tenant_code: payload.tenant_code || payload.tenantCode || payload.tenantSlug,
     access_token: payload.access_token,
     id_token: payload.id_token,
     refresh_token: payload.refresh_token,
     expires_in: payload.expires_in,
     token_type: payload.token_type || 'Bearer',
+  }
+}
+
+function normalizeStringArray(value, keyCandidates = []) {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === 'string') return item
+      if (item && typeof item === 'object') {
+        for (const key of keyCandidates) {
+          if (typeof item[key] === 'string') return item[key]
+        }
+      }
+      return ''
+    }).filter(Boolean)
+  }
+
+  if (typeof value === 'string') return [value]
+  return []
+}
+
+function normalizeScopes(scopes) {
+  if (!scopes || typeof scopes !== 'object') return {}
+  return {
+    ...scopes,
+    studentPopulations: scopes.studentPopulations || scopes.student_populations || [],
+  }
+}
+
+function normalizeCurrentUser(payload) {
+  if (!payload || typeof payload !== 'object') return null
+
+  return {
+    ...payload,
+    userId: payload.userId || payload.user_id || payload.id,
+    displayName: payload.displayName || payload.display_name || payload.name || payload.email,
+    tenantId: payload.tenantId || payload.tenant_id,
+    tenantSlug: payload.tenantSlug || payload.tenant_slug || payload.tenant_code,
+    tenantName: payload.tenantName || payload.tenant_name,
+    baseRole: payload.baseRole || payload.base_role,
+    roles: normalizeStringArray(payload.roles || payload.roleKeys || payload.role_keys || payload.baseRole || payload.base_role, ['key', 'name', 'role']),
+    permissions: normalizeStringArray(payload.permissions || payload.permissionKeys || payload.permission_keys, ['key', 'name', 'permission']),
+    sensitivityTiers: normalizeStringArray(payload.sensitivityTiers || payload.sensitivity_tiers || payload.sensitivities, ['key', 'name', 'tier']),
+    scopes: normalizeScopes(payload.scopes),
+    recordExceptions: Array.isArray(payload.recordExceptions) ? payload.recordExceptions : Array.isArray(payload.record_exceptions) ? payload.record_exceptions : [],
   }
 }
 
@@ -217,9 +261,10 @@ export function AuthProvider({ children }) {
         throw new Error(payload?.detail || payload?.message || 'Unable to load current user.')
       }
 
-      setCurrentUser(payload)
-      persistAuthState(session, pendingChallenge, payload)
-      return payload
+      const normalizedUser = normalizeCurrentUser(payload)
+      setCurrentUser(normalizedUser)
+      persistAuthState(session, pendingChallenge, normalizedUser)
+      return normalizedUser
     } catch (error) {
       console.error('Failed to load current user from /api/v1/me', {
         error: error?.message || error,

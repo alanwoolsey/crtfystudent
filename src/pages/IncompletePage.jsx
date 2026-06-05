@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import SectionHeader from '../components/SectionHeader'
 import WorkItemRow from '../components/WorkItemRow'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, sortWorkItems } from '../lib/studentWorkflow'
 import { getApiErrorMessage, incompleteQueueUrl, normalizeItems, toWorkItemFromIncomplete } from '../lib/operationsApi'
+import useDebouncedValue from '../lib/useDebouncedValue'
 
 const viewOptions = [
   { key: 'submitted_missing_items', label: 'Submitted missing items' },
@@ -25,6 +27,7 @@ export default function IncompletePage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [activeActionId, setActiveActionId] = useState('')
+  const debouncedQuery = useDebouncedValue(query)
 
   const derivedItems = useMemo(
     () => sortWorkItems(buildWorkItemsFromStudents(students).filter((item) => item.section === 'attention' || item.section === 'close')),
@@ -42,7 +45,7 @@ export default function IncompletePage() {
     try {
       const params = new URLSearchParams()
       params.set('view', activeView)
-      if (query.trim()) params.set('q', query.trim())
+      if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
 
       const response = await fetchWithTenantAuth(`${incompleteQueueUrl}?${params.toString()}`)
       const payload = await response.json().catch(() => ({}))
@@ -60,7 +63,7 @@ export default function IncompletePage() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeView, fetchWithTenantAuth, query, session])
+  }, [activeView, debouncedQuery, fetchWithTenantAuth, session])
 
   useEffect(() => {
     loadQueue()
@@ -112,10 +115,14 @@ export default function IncompletePage() {
               </button>
             ))}
           </div>
-          <div className="pill-row compact">
-            <span className="tag">{mode === 'live' ? 'Live incomplete queue' : 'Derived from Student 360'}</span>
-          </div>
-          {error ? <p className="muted-copy">{error}</p> : null}
+          <OperationalModeNotice
+            mode={mode}
+            error={error}
+            liveLabel="Live incomplete queue"
+            derivedLabel="Derived from Student 360"
+            isLoading={isLoading}
+            onRetry={loadQueue}
+          />
         </div>
       </section>
 

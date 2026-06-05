@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import WorkItemRow from '../components/WorkItemRow'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, sortWorkItems } from '../lib/studentWorkflow'
@@ -33,6 +34,11 @@ export default function ExceptionsPage() {
     () => sortWorkItems(buildWorkItemsFromStudents(students).filter((item) => item.section === 'exceptions')),
     [students],
   )
+  const derivedExceptionItemsRef = useRef(derivedExceptionItems)
+
+  useEffect(() => {
+    derivedExceptionItemsRef.current = derivedExceptionItems
+  }, [derivedExceptionItems])
 
   useEffect(() => {
     setQuery(searchParams.get('q') || '')
@@ -61,11 +67,11 @@ export default function ExceptionsPage() {
       setExceptionSource('live')
       setQueueError('')
     } catch (error) {
-      setExceptionItems(derivedExceptionItems)
+      setExceptionItems(derivedExceptionItemsRef.current)
       setExceptionSource('derived')
       setQueueError(error.message || 'Unable to load exceptions queue.')
     }
-  }, [derivedExceptionItems, fetchWithTenantAuth, session])
+  }, [fetchWithTenantAuth, session])
 
   const loadTrustCases = useCallback(async () => {
     if (!session?.access_token || !session?.tenant_id) return
@@ -159,10 +165,13 @@ export default function ExceptionsPage() {
             value={query}
             onChange={(event) => handleQueryChange(event.target.value)}
           />
-          <div className="pill-row compact">
-            <span className="tag">{exceptionSource === 'live' ? 'Live exceptions queue' : 'Derived from workflow state'}</span>
-          </div>
-          {queueError ? <p className="muted-copy">{queueError}</p> : null}
+          <OperationalModeNotice
+            mode={exceptionSource}
+            error={queueError}
+            liveLabel="Live exceptions queue"
+            derivedLabel="Derived from workflow state"
+            onRetry={loadExceptionItems}
+          />
         </div>
       </section>
 

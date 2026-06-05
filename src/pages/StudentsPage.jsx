@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
+import useDebouncedValue from '../lib/useDebouncedValue'
 
 const studentsPerPage = 8
 const quickFilters = [
@@ -29,6 +30,7 @@ export default function StudentsPage() {
   const [query, setQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [page, setPage] = useState(1)
+  const debouncedQuery = useDebouncedValue(query, 350)
 
   useEffect(() => {
     setQuery(searchParams.get('q') || '')
@@ -41,6 +43,10 @@ export default function StudentsPage() {
     else nextParams.delete('q')
     setSearchParams(nextParams, { replace: true })
   }
+
+  useEffect(() => {
+    loadStudents(debouncedQuery.trim()).catch(() => {})
+  }, [debouncedQuery, loadStudents])
 
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
@@ -65,7 +71,12 @@ export default function StudentsPage() {
 
     return quickFilteredStudents.filter((student) => {
       const haystack = [
+        student.id,
         student.name,
+        student.email,
+        student.source,
+        student.stage,
+        student.population,
         getDisplayValue(student.program),
         getDisplayValue(student.advisor),
         getDisplayValue(student.institutionGoal),

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import SectionHeader from '../components/SectionHeader'
 import WorkItemRow from '../components/WorkItemRow'
+import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, sortWorkItems } from '../lib/studentWorkflow'
 import { getApiErrorMessage, normalizeItems, reviewReadyUrl, toWorkItemFromReady } from '../lib/operationsApi'
+import useDebouncedValue from '../lib/useDebouncedValue'
 
 export default function ReadyForReviewPage() {
   const { session, fetchWithTenantAuth } = useAuth()
@@ -14,6 +16,7 @@ export default function ReadyForReviewPage() {
   const [mode, setMode] = useState('derived')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const debouncedQuery = useDebouncedValue(query)
 
   const derivedItems = useMemo(
     () => sortWorkItems(buildWorkItemsFromStudents(students).filter((item) => item.section === 'ready')),
@@ -29,7 +32,7 @@ export default function ReadyForReviewPage() {
 
     try {
       const params = new URLSearchParams()
-      if (query.trim()) params.set('q', query.trim())
+      if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
 
       const response = await fetchWithTenantAuth(`${reviewReadyUrl}${params.toString() ? `?${params.toString()}` : ''}`)
       const payload = await response.json().catch(() => ({}))
@@ -47,7 +50,7 @@ export default function ReadyForReviewPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [fetchWithTenantAuth, query, session])
+  }, [debouncedQuery, fetchWithTenantAuth, session])
 
   useEffect(() => {
     loadQueue()
@@ -94,10 +97,14 @@ export default function ReadyForReviewPage() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div className="pill-row compact">
-            <span className="tag">{mode === 'live' ? 'Live review queue' : 'Derived from Student 360'}</span>
-          </div>
-          {error ? <p className="muted-copy">{error}</p> : null}
+          <OperationalModeNotice
+            mode={mode}
+            error={error}
+            liveLabel="Live review queue"
+            derivedLabel="Derived from Student 360"
+            isLoading={isLoading}
+            onRetry={loadQueue}
+          />
         </div>
       </section>
 

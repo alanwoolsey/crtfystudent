@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
+import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS } from '../lib/admissionsWorkflow'
 import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
 const StudentRecordsContext = createContext(null)
@@ -47,6 +48,7 @@ function normalizeChecklistPayload(payload) {
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload?.items)) return payload.items
   if (Array.isArray(payload?.checklist)) return payload.checklist
+  if (Array.isArray(payload?.checklist?.items)) return payload.checklist.items
   return []
 }
 
@@ -72,12 +74,29 @@ function normalizeStudentsPayload(payload) {
 
   return items.map((student) => ({
     ...student,
+    id: student?.id || student?.studentId,
+    email: normalizeStudentValue(student?.email, ''),
+    phone: normalizeStudentValue(student?.phone, ''),
     program: normalizeStudentValue(student?.program, 'Program pending'),
+    programInterest: normalizeStudentValue(student?.programInterest || student?.program_interest, ''),
+    termInterest: normalizeStudentValue(student?.termInterest || student?.term_interest, ''),
     institutionGoal: normalizeStudentValue(student?.institutionGoal, ''),
-    advisor: normalizeStudentValue(student?.advisor, 'Unassigned'),
+    advisor: normalizeStudentValue(student?.owner || student?.advisor || student?.assignedOwner, 'Unassigned'),
+    ownerId: student?.owner?.id || student?.advisorId || student?.ownerId || student?.assignedOwner?.id || '',
+    population: normalizeStudentValue(student?.population || student?.studentType, ''),
+    source: normalizeStudentValue(student?.source || student?.leadSource || student?.sourceReference, ''),
+    sourceCategory: normalizeStudentValue(student?.sourceCategory || student?.source_category, ''),
+    campaign: normalizeStudentValue(student?.campaign || student?.campaignName, ''),
     risk: normalizeStudentValue(student?.risk, 'Low'),
-    stage: normalizeStudentValue(student?.stage, 'Unknown'),
+    stage: normalizeStudentValue(student?.stage || student?.lifecycleStage || student?.lifecycle_stage, 'Unknown'),
+    nextBestAction: normalizeStudentValue(student?.nextBestAction || student?.next_best_action || student?.suggestedAction?.label, ''),
   }))
+}
+
+function normalizeStudentDetailPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null
+  const student = payload.student && typeof payload.student === 'object' ? payload.student : payload
+  return normalizeStudentsPayload([student])[0] || null
 }
 
 function buildTranscriptSteps(audit = []) {
@@ -183,7 +202,7 @@ function mapParsedTranscript(parsed, file) {
       phone: '(000) 000-0000',
       program: 'Transcript intake',
       institutionGoal: institutionName,
-      stage: isFraudulent ? 'Trust hold' : 'Decision-ready',
+      stage: isFraudulent ? LEGACY_STAGE_LABELS.trustHold : LEGACY_STAGE_LABELS.decisionReady,
       risk: isFraudulent ? 'High' : 'Low',
       advisor: 'Unassigned',
       city: demographic.studentState || demographic.institutionState || 'Location pending',
@@ -244,10 +263,14 @@ function updateStudentChecklistInCollection(currentStudents, studentId, nextChec
   return currentStudents.map((student) => {
     if (student.id !== studentId) return student
 
-    const completedCount = nextChecklist.filter((item) => item.done || item.status === 'complete').length
+    const completedCount = nextChecklist.filter((item) => item.done || item.status === CHECKLIST_STATUSES.complete || item.status === CHECKLIST_STATUSES.waived).length
     const totalCount = nextChecklist.length
     const incompleteCount = totalCount - completedCount
-    const nextStage = incompleteCount === 0 ? 'Decision-ready' : incompleteCount === 1 ? 'Nearly complete' : student.stage
+    const nextStage = incompleteCount === 0
+      ? LEGACY_STAGE_LABELS.decisionReady
+      : incompleteCount === 1
+        ? LEGACY_STAGE_LABELS.nearlyComplete
+        : student.stage
 
     return {
       ...student,
@@ -267,7 +290,7 @@ function patchChecklistItem(checklist, itemId, status) {
       ...item,
       id: fallbackId,
       status,
-      done: status === 'complete',
+      done: status === CHECKLIST_STATUSES.complete,
     }
   })
 
@@ -695,6 +718,7 @@ export function StudentRecordsProvider({ children }) {
     isLoadingStudents,
     studentsError,
     loadStudents,
+    normalizeStudentDetailPayload,
     loadStudentChecklist,
     updateChecklistItemStatus,
     uploadTranscript,

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
 import { getApiErrorMessage, meltQueueUrl, normalizeItems, toMeltCard } from '../lib/operationsApi'
+import useDebouncedValue from '../lib/useDebouncedValue'
 
 const viewOptions = [
   { key: 'all_clear', label: 'Deposited all-clear' },
@@ -27,6 +28,7 @@ export default function DepositMeltPage() {
   const [items, setItems] = useState([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const debouncedQuery = useDebouncedValue(query)
 
   const loadMelt = useCallback(async () => {
     if (!session?.access_token || !session?.tenant_id) return
@@ -37,7 +39,7 @@ export default function DepositMeltPage() {
     try {
       const params = new URLSearchParams()
       params.set('view', activeView)
-      if (query.trim()) params.set('q', query.trim())
+      if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim())
 
       const response = await fetchWithTenantAuth(`${meltQueueUrl}?${params.toString()}`)
       const payload = await response.json().catch(() => ({}))
@@ -53,7 +55,7 @@ export default function DepositMeltPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeView, fetchWithTenantAuth, query, session])
+  }, [activeView, debouncedQuery, fetchWithTenantAuth, session])
 
   useEffect(() => {
     loadMelt()
