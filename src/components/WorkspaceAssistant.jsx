@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, CheckCircle2, Maximize2, MessageCircle, Minimize2, Paperclip, Send, X } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
 import { useAuth } from '../context/AuthContext'
 
 const chatApiBaseUrl = (import.meta.env.VITE_CHAT_URL || '').replace(/\/+$/, '')
@@ -39,6 +40,18 @@ function getChatErrorMessage(response, payload) {
   }
 
   return payload?.message || payload?.detail || payload?.error || `Workspace Assistant request failed: ${response.status}`
+}
+
+function MarkdownMessage({ content }) {
+  return (
+    <ReactMarkdown
+      components={{
+        a: (props) => <a {...props} target="_blank" rel="noreferrer" />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
 }
 
 export default function WorkspaceAssistant({ currentUser }) {
@@ -221,7 +234,7 @@ export default function WorkspaceAssistant({ currentUser }) {
               <div key={message.id} className={`assistant-message ${message.role}`}>
                 {message.role === 'assistant' ? <Bot size={16} /> : null}
                 <div className={`assistant-message-body ${message.policyStatus === 'blocked' ? 'blocked' : message.requiredApproval || message.policyStatus === 'needs_approval' ? 'approval' : ''}`}>
-                  <p>{message.content}</p>
+                  <MarkdownMessage content={message.content} />
                   {message.attachment ? <span className="assistant-message-meta">Attached {message.attachment.fileName}</span> : null}
                   {message.policyStatus === 'blocked' ? <span className="assistant-message-meta">Blocked by governance</span> : null}
                   {message.requiredApproval || message.policyStatus === 'needs_approval' ? <span className="assistant-message-meta">Approval review required</span> : null}
@@ -235,7 +248,7 @@ export default function WorkspaceAssistant({ currentUser }) {
               <div className="assistant-message assistant">
                 <Bot size={16} />
                 <div className="assistant-message-body">
-                  <p>Contacting governed assistant...</p>
+                  <MarkdownMessage content="Contacting governed assistant..." />
                 </div>
               </div>
             ) : null}

@@ -380,8 +380,77 @@ button { cursor: pointer; }
   line-height: 1.45;
   background: #ffffff;
 }
-.assistant-message-body p {
-  margin: 0;
+.assistant-message-body > *:first-child,
+.assistant-message-body > *:first-child > *:first-child {
+  margin-top: 0;
+}
+.assistant-message-body > *:last-child,
+.assistant-message-body > *:last-child > *:last-child {
+  margin-bottom: 0;
+}
+.assistant-message-body p,
+.assistant-message-body ul,
+.assistant-message-body ol,
+.assistant-message-body blockquote,
+.assistant-message-body pre,
+.assistant-message-body table {
+  margin: 0.65rem 0;
+}
+.assistant-message-body ul,
+.assistant-message-body ol {
+  padding-left: 1.2rem;
+}
+.assistant-message-body li + li {
+  margin-top: 0.3rem;
+}
+.assistant-message-body h1,
+.assistant-message-body h2,
+.assistant-message-body h3,
+.assistant-message-body h4 {
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.98rem;
+  line-height: 1.25;
+}
+.assistant-message-body a {
+  color: #2852c8;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.assistant-message-body code {
+  border-radius: 6px;
+  padding: 0.1rem 0.28rem;
+  background: #eef2f7;
+  color: var(--ink);
+  font-size: 0.88em;
+}
+.assistant-message-body pre {
+  max-width: 100%;
+  overflow: auto;
+  border-radius: 12px;
+  padding: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.assistant-message-body pre code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+.assistant-message-body blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  color: var(--muted);
+}
+.assistant-message-body table {
+  display: block;
+  max-width: 100%;
+  overflow: auto;
+  font-size: 0.88rem;
+}
+.assistant-message-body th,
+.assistant-message-body td {
+  padding: 8px;
 }
 .assistant-message-body.blocked {
   border-color: #fecaca;
@@ -402,6 +471,17 @@ button { cursor: pointer; }
   color: #ffffff;
   background: var(--ink);
   border-color: var(--ink);
+}
+.assistant-message.user .assistant-message-body a {
+  color: #c7d2fe;
+}
+.assistant-message.user .assistant-message-body code {
+  background: rgba(255,255,255,0.14);
+  color: #ffffff;
+}
+.assistant-message.user .assistant-message-body blockquote {
+  border-left-color: rgba(255,255,255,0.32);
+  color: rgba(255,255,255,0.78);
 }
 .assistant-message-meta {
   display: block;
