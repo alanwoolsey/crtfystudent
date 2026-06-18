@@ -1,369 +1,430 @@
-import { useMemo, useRef, useState } from 'react'
-import { FileUp, Send, Sparkles, UserPlus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronUp, Download, ExternalLink, Maximize2, Printer, RefreshCw, Search, ZoomIn, ZoomOut } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
-import OperationalModeNotice from '../components/OperationalModeNotice'
-import { useAuth } from '../context/AuthContext'
+import StatCard from '../components/StatCard'
 
-const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
-const inquiryUrl = `${apiBaseUrl}/api/v1/prospects/inquiries`
-const transcriptFirstUploadUrl = `${apiBaseUrl}/api/v1/prospects/transcripts/uploads`
-
-const initialForm = {
-  firstName: '',
-  lastName: '',
-  email: '',
-  phone: '',
-  population: 'transfer',
-  programInterest: 'BS Nursing Transfer',
-  termInterest: 'Fall 2026',
-  priorInstitution: '',
-  source: 'manual_entry',
-  sourceCategory: 'direct',
-  campaign: '',
-  consent: true,
-  question: '',
-}
-
-function buildFallbackProspect(form, file) {
-  const isTransfer = form.population === 'transfer'
-  const program = form.programInterest || (isTransfer ? 'Transfer pathway pending' : 'Program fit pending')
-  const transferCredits = file && isTransfer ? 42 : 0
-  const fitScore = file ? 88 : 72
-  const missingItems = file
-    ? ['Official transcript review', isTransfer ? 'Transfer course confirmation' : 'Application form']
-    : ['Transcript upload', 'Application form']
-
-  return {
-    prospectId: `prospect-${Date.now()}`,
-    studentId: null,
-    status: 'created_locally',
-    mode: 'derived',
-    studentName: [form.firstName, form.lastName].filter(Boolean).join(' ') || 'New prospect',
-    programFit: {
-      program,
-      fitScore,
-      confidence: file ? 0.82 : 0.58,
-      transferCredits,
-      estimatedCompletion: isTransfer && file ? '2.1 years' : 'Pending transcript',
-      scholarshipPotential: fitScore >= 85 ? '$8.5k-$11k' : 'Review after application',
-    },
-    nextStep: {
-      code: file ? 'start_application' : 'upload_transcript',
-      label: file ? 'Start application' : 'Upload transcript',
-      url: '',
-    },
-    counselor: {
-      name: isTransfer ? 'Transfer admissions queue' : 'Admissions counselor queue',
-      email: 'admissions@example.edu',
-    },
-    transcriptStatus: file ? 'Received for fit preview' : 'Not uploaded',
-    missingItems,
-    signals: [
-      { label: 'Population', value: form.population },
-      { label: 'Source', value: form.source },
-      { label: 'Intent', value: form.question ? 'Question captured' : 'Program interest captured' },
+const submissions = [
+  {
+    id: '4d8f3b00-c830-4876-83ac-d29ac02a6bca',
+    name: 'Stephanie Nicole Park',
+    email: 'bnelson+23@shamrocksolutionsllc.com',
+    phone: '1 (605) 868-9403',
+    type: 'Transfer',
+    assignedTo: 'Not available',
+    program: 'Biology (B.S.)',
+    term: 'Fall 2026',
+    submitted: '17 Jun 2026',
+    updated: '17 Jun 2026',
+    status: 'Submitted',
+    transcriptCount: 1,
+    transcripts: [
+      {
+        id: '94cf53af-04eb-4ee4-837c-a405cf6717a4',
+        documentId: 'c7ca937c-66bd-4919-80ea-b34a5718492c',
+        submitted: '17 Jun 2026',
+        updated: '17 Jun 2026',
+        status: 'Submitted',
+      },
     ],
-  }
+    courses: [
+      { source: 'Psychology of Human Relations', course: 'Psychology of Human Relations', credits: 3, grade: 'PD', mappedTo: 'General Education', countsAs: 'Psychology elective' },
+      { source: 'Principles of Biology I', course: 'BIO 101', credits: 4, grade: 'A-', mappedTo: 'BIO 111', countsAs: 'Major requirement' },
+      { source: 'College Algebra', course: 'MATH 120', credits: 3, grade: 'B+', mappedTo: 'MATH 131', countsAs: 'Quantitative reasoning' },
+      { source: 'English Composition', course: 'ENG 101', credits: 3, grade: 'A', mappedTo: 'WRIT 101', countsAs: 'Writing requirement' },
+    ],
+  },
+  {
+    id: 'b539afce-1eee-44ca-bfab-20eb37bc523f',
+    name: 'Jessica Newman',
+    email: 'awoolsey+5@shamrocksolutionsllc.com',
+    phone: '1 (312) 555-0198',
+    type: 'Transfer',
+    assignedTo: 'Not available',
+    program: 'Computer Science (B.S.)',
+    term: 'Fall 2026',
+    submitted: '17 Jun 2026',
+    updated: '17 Jun 2026',
+    status: 'Submitted',
+    transcriptCount: 2,
+    transcripts: [
+      {
+        id: '7f326ee1-828a-4af6-bfb8-c12a4f36c447',
+        documentId: 'f94502ef-821f-44d2-bf37-44f313c121f3',
+        submitted: '17 Jun 2026',
+        updated: '17 Jun 2026',
+        status: 'Submitted',
+      },
+      {
+        id: '8a1e44aa-fd2d-48f5-9b76-1f79bb22dc44',
+        documentId: '1c143884-05a6-4ac2-a9c5-6e24e579133d',
+        submitted: '17 Jun 2026',
+        updated: '17 Jun 2026',
+        status: 'Submitted',
+      },
+    ],
+    courses: [
+      { source: 'Intro to Programming', course: 'CIS 110', credits: 4, grade: 'A', mappedTo: 'CS 120', countsAs: 'Major requirement' },
+      { source: 'Calculus I', course: 'MATH 151', credits: 4, grade: 'B', mappedTo: 'MATH 181', countsAs: 'Major requirement' },
+      { source: 'Public Speaking', course: 'COMM 101', credits: 3, grade: 'A-', mappedTo: 'COMM 110', countsAs: 'General education' },
+    ],
+  },
+  {
+    id: '5d0c7965-3c15-4bcc-ac85-c876c6886d04',
+    name: 'Stephanie Nicole Park',
+    email: 'bnelson+21@shamrocksolutionsllc.com',
+    phone: '1 (605) 868-9403',
+    type: 'Transfer',
+    assignedTo: 'Not available',
+    program: 'Business of Health (B.S.B.A.)',
+    term: 'Spring 2027',
+    submitted: '17 Jun 2026',
+    updated: '17 Jun 2026',
+    status: 'Submitted',
+    transcriptCount: 1,
+    transcripts: [
+      {
+        id: '655e479f-8f20-4546-af35-20c4f6a3dccb',
+        documentId: '5a681163-2e43-45df-ab70-b414f5324914',
+        submitted: '17 Jun 2026',
+        updated: '17 Jun 2026',
+        status: 'Submitted',
+      },
+    ],
+    courses: [
+      { source: 'Microeconomics', course: 'ECON 201', credits: 3, grade: 'B+', mappedTo: 'ECON 210', countsAs: 'Business core' },
+      { source: 'Introduction to Healthcare', course: 'HLTH 100', credits: 3, grade: 'A', mappedTo: 'HLTH 110', countsAs: 'Major requirement' },
+    ],
+  },
+  {
+    id: 'bb15fb30-43ef-49ff-a713-f0bb6d38afe9',
+    name: 'Marcus Lee',
+    email: 'mlee.transfer@example.edu',
+    phone: '1 (773) 555-0107',
+    type: 'Transfer',
+    assignedTo: 'Rhea Mercer',
+    program: 'Nursing (B.S.N.)',
+    term: 'Fall 2026',
+    submitted: '16 Jun 2026',
+    updated: '17 Jun 2026',
+    status: 'Submitted',
+    transcriptCount: 3,
+    transcripts: [
+      {
+        id: '2c57787c-5de8-48d8-b381-504998835ccf',
+        documentId: '55253418-24de-42fe-9340-63d7b643230a',
+        submitted: '16 Jun 2026',
+        updated: '17 Jun 2026',
+        status: 'Submitted',
+      },
+    ],
+    courses: [
+      { source: 'Anatomy & Physiology I', course: 'BIO 201', credits: 4, grade: 'A-', mappedTo: 'BIO 221', countsAs: 'Prerequisite' },
+      { source: 'Chemistry for Health', course: 'CHEM 115', credits: 4, grade: 'B+', mappedTo: 'CHEM 121', countsAs: 'Prerequisite' },
+    ],
+  },
+]
+
+const filterFields = [
+  { key: 'name', label: 'Student Name' },
+  { key: 'email', label: 'Student Email' },
+  { key: 'id', label: 'Student ID' },
+  { key: 'type', label: 'Type' },
+  { key: 'assignedTo', label: 'Assigned To' },
+  { key: 'program', label: 'Program' },
+  { key: 'term', label: 'Term' },
+  { key: 'status', label: 'Status' },
+]
+
+function StatusBadge({ status }) {
+  return <span className="badge risk-low">{status}</span>
 }
 
-function normalizeProspectPayload(payload, fallback) {
-  const prospect = payload?.prospect || payload || {}
-  const fit = prospect.programFit || prospect.fit || prospect.fitSummary || {}
-  const nextStep = prospect.nextStep || prospect.suggestedNextStep || {}
-
-  return {
-    ...fallback,
-    ...prospect,
-    mode: 'live',
-    prospectId: prospect.prospectId || prospect.id || fallback.prospectId,
-    studentName: prospect.studentName || prospect.name || fallback.studentName,
-    programFit: {
-      ...fallback.programFit,
-      ...fit,
-      program: fit.program || fit.programName || prospect.programInterest || fallback.programFit.program,
-      fitScore: Number(fit.fitScore ?? fit.score ?? fallback.programFit.fitScore),
-      transferCredits: Number(fit.transferCredits ?? fit.likelyAcceptedCredits ?? fallback.programFit.transferCredits),
-    },
-    nextStep: {
-      ...fallback.nextStep,
-      ...nextStep,
-      label: nextStep.label || nextStep.title || fallback.nextStep.label,
-    },
-    counselor: prospect.counselor || prospect.owner || fallback.counselor,
-    transcriptStatus: prospect.transcriptStatus || prospect.transcript?.status || fallback.transcriptStatus,
-    missingItems: Array.isArray(prospect.missingItems)
-      ? prospect.missingItems
-      : Array.isArray(prospect.missingNextSteps)
-        ? prospect.missingNextSteps
-        : fallback.missingItems,
-    signals: Array.isArray(prospect.signals) ? prospect.signals : fallback.signals,
-  }
+function TranscriptDocument({ student, transcript }) {
+  return (
+    <div className="transcript-document">
+      <div className="transcript-page">
+        <div className="transcript-school">Shamrock Community College</div>
+        <div className="transcript-title">Official Transcript</div>
+        <div className="transcript-document-grid">
+          <span>Student</span><strong>{student.name}</strong>
+          <span>Student ID</span><strong>{student.id}</strong>
+          <span>Document ID</span><strong>{transcript.documentId}</strong>
+          <span>Issued</span><strong>{transcript.submitted}</strong>
+        </div>
+        <div className="transcript-line" />
+        {student.courses.map((course) => (
+          <div key={`${course.course}-${course.source}`} className="transcript-course-line">
+            <span>{course.course}</span>
+            <span>{course.source}</span>
+            <span>{course.credits}.0</span>
+            <span>{course.grade}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export default function ProspectPortalPage() {
-  const { session, fetchWithTenantAuth } = useAuth()
-  const fileInputRef = useRef(null)
-  const [form, setForm] = useState(initialForm)
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [result, setResult] = useState(() => buildFallbackProspect(initialForm, null))
-  const [mode, setMode] = useState('derived')
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [error, setError] = useState('')
+  const [filters, setFilters] = useState({})
+  const [selectedSubmissionId, setSelectedSubmissionId] = useState(submissions[0].id)
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState(submissions[0].transcripts[0].id)
+  const [isStudentInfoOpen, setIsStudentInfoOpen] = useState(true)
+  const [isTranscriptsOpen, setIsTranscriptsOpen] = useState(true)
+  const [isReviewOpen, setIsReviewOpen] = useState(true)
 
-  const canSubmit = form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.consent
-  const fitPercent = useMemo(() => {
-    const score = Number(result?.programFit?.fitScore)
-    if (!Number.isFinite(score)) return '-'
-    return `${Math.round(score <= 1 ? score * 100 : score)}%`
-  }, [result])
-
-  function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  function resetForm() {
-    setForm(initialForm)
-    setSelectedFile(null)
-    setResult(buildFallbackProspect(initialForm, null))
-    setMode('derived')
-    setError('')
-    if (fileInputRef.current) fileInputRef.current.value = ''
-  }
-
-  async function submitInquiry(event) {
-    event.preventDefault()
-    if (!canSubmit || !session?.access_token || !session?.tenant_id) return
-
-    setIsSubmitting(true)
-    setError('')
-    const fallback = buildFallbackProspect(form, selectedFile)
-
-    try {
-      let uploadPayload = null
-
-      if (selectedFile) {
-        const formData = new FormData()
-        formData.append('file', selectedFile, selectedFile.name)
-        formData.append('email', form.email)
-        formData.append('population', form.population)
-        formData.append('programInterest', form.programInterest)
-        formData.append('termInterest', form.termInterest)
-
-        const uploadResponse = await fetchWithTenantAuth(transcriptFirstUploadUrl, {
-          method: 'POST',
-          body: formData,
-        })
-        uploadPayload = await uploadResponse.json().catch(() => ({}))
-
-        if (!uploadResponse.ok) {
-          throw new Error(uploadPayload?.detail || uploadPayload?.message || 'Unable to upload prospect transcript.')
-        }
-      }
-
-      const response = await fetchWithTenantAuth(inquiryUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          transcriptUploadId: uploadPayload?.uploadId || uploadPayload?.transcriptId || null,
-          transcriptFilename: selectedFile?.name || null,
-        }),
+  const filteredSubmissions = useMemo(() => {
+    return submissions.filter((submission) => {
+      return filterFields.every((field) => {
+        const query = String(filters[field.key] || '').trim().toLowerCase()
+        if (!query) return true
+        return String(submission[field.key] || '').toLowerCase().includes(query)
       })
-      const payload = await response.json().catch(() => ({}))
+    })
+  }, [filters])
 
-      if (!response.ok) {
-        throw new Error(payload?.detail || payload?.message || 'Unable to create prospect.')
-      }
+  const selectedSubmission = useMemo(
+    () => submissions.find((submission) => submission.id === selectedSubmissionId) || filteredSubmissions[0] || submissions[0],
+    [filteredSubmissions, selectedSubmissionId],
+  )
+  const selectedTranscript = selectedSubmission.transcripts.find((transcript) => transcript.id === selectedTranscriptId) || selectedSubmission.transcripts[0]
 
-      setResult(normalizeProspectPayload(payload, fallback))
-      setMode('live')
-    } catch (nextError) {
-      setResult(fallback)
-      setMode('derived')
-      setError(nextError.message || 'Prospect APIs are not available yet. Showing a derived preview.')
-    } finally {
-      setIsSubmitting(false)
-    }
+  function updateFilter(key, value) {
+    setFilters((current) => ({ ...current, [key]: value }))
   }
+
+  function openSubmission(submission) {
+    setSelectedSubmissionId(submission.id)
+    setSelectedTranscriptId(submission.transcripts[0]?.id || '')
+    setIsStudentInfoOpen(true)
+    setIsTranscriptsOpen(true)
+    setIsReviewOpen(true)
+  }
+
+  const submittedLastSevenDays = submissions.filter((submission) => submission.submitted === '17 Jun 2026' || submission.submitted === '16 Jun 2026').length
 
   return (
-    <div className="page-wrap">
+    <div className="page-wrap prospect-school-view">
       <SectionHeader
-        eyebrow="Inquiry capture"
+        eyebrow="School view"
         title="Prospect Portal"
-        subtitle="Capture intent, transcript evidence, source attribution, and a next step before an application exists."
-        actions={(
-          <button type="button" className="secondary-button" onClick={resetForm}>
-            Reset form
-          </button>
-        )}
+        subtitle="Mock school-facing transcript submissions view aligned to Student 360 actions and record detail patterns."
       />
 
-      <section className="dashboard-grid two-up">
-        <form className="panel prospect-form-panel" onSubmit={submitInquiry}>
-          <div className="panel-header">
-            <div>
-              <h3>Inquiry intake</h3>
-              <p>Create a structured prospect record with source, program, term, consent, and optional transcript-first evidence.</p>
+      <section className="stats-grid">
+        <StatCard label="Total submissions" value="27" tone="indigo" />
+        <StatCard label="Submitted in last 7 days" value={submittedLastSevenDays} tone="teal" />
+        <StatCard label="Processing" value="0" tone="violet" />
+        <StatCard label="Completed" value="0" tone="rose" />
+      </section>
+
+      <section className="panel prospect-submissions-panel">
+        <div className="list-pagination-bar">
+          <span className="tag">Showing {filteredSubmissions.length} of {submissions.length}</span>
+          <div className="search-count">
+            <Search size={16} />
+            <span>Filter submissions by column</span>
+          </div>
+        </div>
+
+        <div className="table-wrap prospect-table-wrap">
+          <table className="prospect-submissions-table">
+            <thead>
+              <tr>
+                <th>Student Name</th>
+                <th>Student Email</th>
+                <th>Student ID</th>
+                <th>Type</th>
+                <th>Assigned To</th>
+                <th>Program</th>
+                <th>Term</th>
+                <th>Submitted <ChevronDown size={14} /></th>
+                <th>Updated</th>
+                <th>Status</th>
+                <th># of Transcripts</th>
+                <th>Action</th>
+              </tr>
+              <tr className="filter-row">
+                {filterFields.map((field) => (
+                  <th key={field.key}>
+                    <input
+                      className="filter-input compact-filter"
+                      placeholder="Filter"
+                      value={filters[field.key] || ''}
+                      onChange={(event) => updateFilter(field.key, event.target.value)}
+                    />
+                  </th>
+                ))}
+                <th />
+                <th />
+                <th />
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {filteredSubmissions.map((submission) => (
+                <tr key={submission.id} className={submission.id === selectedSubmission.id ? 'selected-row' : ''}>
+                  <td><strong>{submission.name}</strong></td>
+                  <td>{submission.email}</td>
+                  <td className="wrap-id">{submission.id}</td>
+                  <td>{submission.type}</td>
+                  <td>{submission.assignedTo === 'Not available' ? '-' : submission.assignedTo}</td>
+                  <td>{submission.program}</td>
+                  <td>{submission.term}</td>
+                  <td>{submission.submitted}</td>
+                  <td>{submission.updated}</td>
+                  <td><StatusBadge status={submission.status} /></td>
+                  <td>{submission.transcriptCount}</td>
+                  <td>
+                    <button type="button" className="secondary-button compact-button" onClick={() => openSubmission(submission)}>
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="panel prospect-detail-panel">
+        <button type="button" className="section-toggle" onClick={() => setIsStudentInfoOpen((current) => !current)}>
+          <span>Student Information</span>
+          {isStudentInfoOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+        {isStudentInfoOpen ? (
+          <>
+            <div className="student-info-summary">
+              <strong>Program:</strong> {selectedSubmission.program}
+              <strong>Term:</strong> {selectedSubmission.term}
             </div>
-            <UserPlus size={22} />
-          </div>
-
-          <div className="admin-form-grid">
-            <label className="auth-field">
-              <span>First name</span>
-              <input value={form.firstName} onChange={(event) => updateField('firstName', event.target.value)} required />
-            </label>
-            <label className="auth-field">
-              <span>Last name</span>
-              <input value={form.lastName} onChange={(event) => updateField('lastName', event.target.value)} required />
-            </label>
-            <label className="auth-field">
-              <span>Email</span>
-              <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} required />
-            </label>
-            <label className="auth-field">
-              <span>Phone</span>
-              <input value={form.phone} onChange={(event) => updateField('phone', event.target.value)} />
-            </label>
-            <label className="auth-field">
-              <span>Student type</span>
-              <select value={form.population} onChange={(event) => updateField('population', event.target.value)}>
-                <option value="transfer">Transfer</option>
-                <option value="first-year">First-year</option>
-                <option value="graduate">Graduate</option>
-                <option value="international">International</option>
-                <option value="adult_learner">Adult learner</option>
-                <option value="readmit">Readmit</option>
-                <option value="dual_credit">Dual credit</option>
-                <option value="military_veteran">Military / veteran</option>
-              </select>
-            </label>
-            <label className="auth-field">
-              <span>Program interest</span>
-              <input value={form.programInterest} onChange={(event) => updateField('programInterest', event.target.value)} />
-            </label>
-            <label className="auth-field">
-              <span>Term interest</span>
-              <input value={form.termInterest} onChange={(event) => updateField('termInterest', event.target.value)} />
-            </label>
-            <label className="auth-field">
-              <span>Prior institution</span>
-              <input value={form.priorInstitution} onChange={(event) => updateField('priorInstitution', event.target.value)} />
-            </label>
-            <label className="auth-field">
-              <span>Source</span>
-              <select value={form.source} onChange={(event) => updateField('source', event.target.value)}>
-                <option value="manual_entry">Manual entry</option>
-                <option value="external_form">External form</option>
-                <option value="chatbot">Chatbot</option>
-                <option value="event">Event</option>
-                <option value="partner">Partner</option>
-                <option value="referral">Referral</option>
-                <option value="imported_list">Imported list</option>
-                <option value="transcript_first">Transcript-first lead</option>
-              </select>
-            </label>
-            <label className="auth-field">
-              <span>Campaign</span>
-              <input value={form.campaign} onChange={(event) => updateField('campaign', event.target.value)} />
-            </label>
-          </div>
-
-          <label className="auth-field">
-            <span>Question or intent signal</span>
-            <textarea value={form.question} onChange={(event) => updateField('question', event.target.value)} placeholder="What did the student ask, mention, or need?" />
-          </label>
-
-          <div className="prospect-upload-box">
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="file-input-hidden"
-              onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
-            />
-            <div>
-              <strong>{selectedFile ? selectedFile.name : 'Optional transcript upload'}</strong>
-              <p className="muted-copy">Attach an unofficial or official transcript to create a transcript-first lead and fit preview.</p>
+            <div className="student-info-grid">
+              <div><span>Name</span><strong>{selectedSubmission.name}</strong></div>
+              <div><span>Email</span><strong>{selectedSubmission.email}</strong></div>
+              <div><span>Phone</span><strong>{selectedSubmission.phone}</strong></div>
+              <div><span>Goal</span><strong>{selectedSubmission.type}</strong></div>
+              <div><span>Assigned To</span><strong>{selectedSubmission.assignedTo}</strong></div>
             </div>
-            <button type="button" className="secondary-button" onClick={() => fileInputRef.current?.click()}>
-              <FileUp size={16} />
-              Choose file
-            </button>
-          </div>
+          </>
+        ) : null}
+      </section>
 
-          <label className="admin-inline-check">
-            <input type="checkbox" checked={form.consent} onChange={(event) => updateField('consent', event.target.checked)} />
-            <span>Student consent captured for admissions follow-up.</span>
-          </label>
-
-          {error ? <p className="auth-error">{error}</p> : null}
-
-          <div className="password-actions">
-            <button type="submit" className="primary-button" disabled={!canSubmit || isSubmitting}>
-              <Send size={16} />
-              {isSubmitting ? 'Creating prospect...' : 'Create prospect'}
-            </button>
-          </div>
-        </form>
-
-        <section className="panel prospect-result-panel">
-          <OperationalModeNotice
-            mode={mode}
-            liveLabel="Live prospect"
-            derivedLabel="Derived preview"
-            error={mode === 'derived' ? error : ''}
-          />
-
-          <div className="panel-header">
-            <div>
-              <h3>{result.studentName}</h3>
-              <p>{result.transcriptStatus}</p>
+      <section className="panel prospect-detail-panel">
+        <button type="button" className="section-toggle" onClick={() => setIsTranscriptsOpen((current) => !current)}>
+          <span>Transcripts</span>
+          {isTranscriptsOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+        {isTranscriptsOpen ? (
+          <>
+            <p className="muted-copy">Submitted transcript records for this student.</p>
+            <div className="table-wrap transcript-list-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Transcript ID</th>
+                    <th>Document ID</th>
+                    <th>Submitted</th>
+                    <th>Updated</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedSubmission.transcripts.map((transcript) => (
+                    <tr key={transcript.id} className={transcript.id === selectedTranscript.id ? 'selected-row' : ''}>
+                      <td>{transcript.id}</td>
+                      <td>{transcript.documentId}</td>
+                      <td>{transcript.submitted}</td>
+                      <td>{transcript.updated}</td>
+                      <td><StatusBadge status={transcript.status} /></td>
+                      <td>
+                        <button type="button" className="secondary-button compact-button" onClick={() => setSelectedTranscriptId(transcript.id)}>
+                          Open transcript
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <Sparkles size={22} />
-          </div>
+          </>
+        ) : null}
+      </section>
 
-          <div className="preview-card emphasis">
-            <span className="table-sub">Best-fit program</span>
-            <strong>{result.programFit.program}</strong>
-            <p>{fitPercent} fit confidence - {result.programFit.transferCredits} likely accepted credits - {result.programFit.estimatedCompletion}</p>
-          </div>
+      <section className="panel prospect-detail-panel">
+        <button type="button" className="section-toggle" onClick={() => setIsReviewOpen((current) => !current)}>
+          <span>Transcript review</span>
+          {isReviewOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+        {isReviewOpen ? (
+          <>
+            <p className="muted-copy">Inline view for transcript {selectedTranscript.id}</p>
+            <div className="transcript-review-grid">
+              <article className="review-pane">
+                <div className="review-pane-header">
+                  <div>
+                    <h3>Course mappings</h3>
+                    <p>Extracted courses and transfer decisions</p>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" className="icon-button" aria-label="Expand course mappings"><Maximize2 size={18} /></button>
+                    <button type="button" className="secondary-button"><Printer size={16} /> Print</button>
+                  </div>
+                </div>
+                <div className="table-wrap mapping-table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Source</th>
+                        <th>Course</th>
+                        <th>Credits</th>
+                        <th>Grade</th>
+                        <th>Mapped to</th>
+                        <th>Counts as</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSubmission.courses.map((course) => (
+                        <tr key={`${course.source}-${course.course}`}>
+                          <td>{course.source}</td>
+                          <td>{course.course}</td>
+                          <td>{course.credits}</td>
+                          <td>{course.grade}</td>
+                          <td><span className="tag">{course.mappedTo}</span></td>
+                          <td><span className="tag">{course.countsAs}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
 
-          <div className="preview-grid">
-            <div className="preview-card">
-              <span className="table-sub">Scholarship potential</span>
-              <strong>{result.programFit.scholarshipPotential}</strong>
+              <article className="review-pane">
+                <div className="review-pane-header">
+                  <div>
+                    <h3>Transcript</h3>
+                    <p>Rendered inline using PDF.js</p>
+                  </div>
+                  <div className="review-actions">
+                    <button type="button" className="icon-button" aria-label="Expand transcript"><ExternalLink size={18} /></button>
+                    <button type="button" className="secondary-button"><Download size={16} /> Download</button>
+                  </div>
+                </div>
+                <div className="pdf-toolbar">
+                  <ZoomOut size={17} />
+                  <div className="pdf-slider"><span /></div>
+                  <span>105%</span>
+                  <ZoomIn size={17} />
+                  <span className="pdf-divider" />
+                  <RefreshCw size={17} />
+                  <span className="pdf-divider" />
+                  <Download size={17} />
+                </div>
+                <TranscriptDocument student={selectedSubmission} transcript={selectedTranscript} />
+              </article>
             </div>
-            <div className="preview-card">
-              <span className="table-sub">Next step</span>
-              <strong>{result.nextStep.label}</strong>
-            </div>
-            <div className="preview-card">
-              <span className="table-sub">Counselor</span>
-              <strong>{result.counselor?.name || 'Unassigned'}</strong>
-            </div>
-            <div className="preview-card">
-              <span className="table-sub">Prospect ID</span>
-              <strong>{result.prospectId}</strong>
-            </div>
-          </div>
-
-          <div className="callout-card">
-            <h4>Missing next steps</h4>
-            <div className="pill-row compact">
-              {result.missingItems.map((item) => <span key={item} className="tag">{item}</span>)}
-            </div>
-          </div>
-
-          <div className="stack-list">
-            {result.signals.map((signal) => (
-              <div key={`${signal.label}-${signal.value}`} className="stack-row">
-                <strong>{signal.label}</strong>
-                <span>{signal.value}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+          </>
+        ) : null}
       </section>
     </div>
   )

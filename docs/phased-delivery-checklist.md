@@ -625,3 +625,5 @@ Existing surfaces already present in the frontend should map this way:
 - [x] Add a delivery status section to the Phase 1 backlog after the first implementation pass.
 - [x] Create consolidated backend instructions for Phases 4-16.
 - [x] Update Phase 4-16 checklist items with frontend/API-contract coverage and remaining backend/product gaps.
+- [x] Create backend verification and release-readiness runbook.
+- [ ] Run backend verification and release-readiness runbook against seeded tenant.
