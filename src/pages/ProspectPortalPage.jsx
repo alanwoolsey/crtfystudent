@@ -212,10 +212,10 @@ export default function ProspectPortalPage() {
       />
 
       <section className="stats-grid">
-        <StatCard label="Total submissions" value="27" tone="indigo" />
-        <StatCard label="Submitted in last 7 days" value={submittedLastSevenDays} tone="teal" />
-        <StatCard label="Processing" value="0" tone="violet" />
-        <StatCard label="Completed" value="0" tone="rose" />
+        <StatCard stat={{ label: 'Total submissions', value: '27', tone: 'indigo' }} />
+        <StatCard stat={{ label: 'Submitted in last 7 days', value: submittedLastSevenDays, tone: 'teal' }} />
+        <StatCard stat={{ label: 'Processing', value: '0', tone: 'violet' }} />
+        <StatCard stat={{ label: 'Completed', value: '0', tone: 'rose' }} />
       </section>
 
       <section className="panel prospect-submissions-panel">
