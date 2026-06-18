@@ -17,6 +17,7 @@ const adminUsersUrl = `${apiBaseUrl}/api/v1/admin/users`
 const adminRolesUrl = `${apiBaseUrl}/api/v1/admin/roles`
 const adminSensitivityTiersUrl = `${apiBaseUrl}/api/v1/admin/sensitivity-tiers`
 const adminScopeOptionsUrl = `${apiBaseUrl}/api/v1/admin/scope-options`
+const platformTenantsUrl = `${apiBaseUrl}/api/v1/platform/tenants`
 
 const scopeKeys = ['campuses', 'territories', 'programs', 'studentPopulations', 'stages']
 
@@ -102,6 +103,32 @@ function normalizeUserRecord(user) {
     createdAt: user.createdAt || null,
     updatedAt: user.updatedAt || null,
   }
+}
+
+function normalizePlatformTenant(item) {
+  return {
+    tenantId: item?.tenantId || item?.tenant_id || item?.id || '',
+    name: item?.name || item?.tenantName || item?.tenant_name || 'Unnamed tenant',
+    slug: item?.slug || item?.tenantSlug || item?.tenant_slug || '',
+    status: item?.status === 'inactive' ? 'inactive' : 'active',
+  }
+}
+
+function normalizePlatformTenants(payload) {
+  const items = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.tenants)
+        ? payload.tenants
+        : []
+
+  return items.map(normalizePlatformTenant).filter((tenant) => tenant.tenantId)
+}
+
+function buildTenantLabel(tenant) {
+  if (!tenant) return 'Selected tenant'
+  return tenant.slug ? `${tenant.name} (${tenant.slug})` : tenant.name
 }
 
 function buildFallbackUser(currentUser) {
@@ -210,25 +237,93 @@ export default function AdminPage() {
   const [selectedProjectionJobId, setSelectedProjectionJobId] = useState('')
   const [isProjectionJobsLoading, setIsProjectionJobsLoading] = useState(false)
   const [isProjectionJobLoading, setIsProjectionJobLoading] = useState(false)
+  const [platformTenants, setPlatformTenants] = useState([])
+  const [selectedTenantId, setSelectedTenantId] = useState(session?.tenant_id || '')
+  const [isLoadingPlatformTenants, setIsLoadingPlatformTenants] = useState(false)
+  const [platformTenantsError, setPlatformTenantsError] = useState('')
 
-  const canViewUsers = hasAnyPermission(['admin_users_view', 'manage_integrations', 'release_decision'])
-  const canCreateUsers = hasAnyPermission(['admin_users_create', 'manage_integrations', 'release_decision'])
-  const canUpdateUsers = hasAnyPermission(['admin_users_update', 'manage_integrations', 'release_decision'])
-  const canDeactivateUsers = hasAnyPermission(['admin_users_deactivate', 'manage_integrations', 'release_decision'])
-  const canDeleteUsers = hasAnyPermission(['admin_users_delete', 'manage_integrations', 'release_decision'])
+  const canSelectTenant = hasAnyPermission(['platform_tenants_view', 'platform_tenants_manage', 'platform_users_view', 'platform_users_manage'])
+  const canViewUsers = hasAnyPermission(['admin_users_view', 'manage_integrations', 'release_decision', 'platform_tenants_view', 'platform_users_view', 'platform_users_manage'])
+  const canCreateUsers = hasAnyPermission(['admin_users_create', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_create', 'platform_users_manage'])
+  const canUpdateUsers = hasAnyPermission(['admin_users_update', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_update', 'platform_users_manage'])
+  const canDeactivateUsers = hasAnyPermission(['admin_users_deactivate', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_deactivate', 'platform_users_manage'])
+  const canDeleteUsers = hasAnyPermission(['admin_users_delete', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_delete', 'platform_users_manage'])
+  const effectiveTenantId = canSelectTenant ? selectedTenantId : session?.tenant_id
+  const selectedTenant = platformTenants.find((tenant) => tenant.tenantId === effectiveTenantId)
+
+  useEffect(() => {
+    if (!canSelectTenant) {
+      setSelectedTenantId(session?.tenant_id || '')
+    }
+  }, [canSelectTenant, session?.tenant_id])
+
+  const adminTenantFetch = useCallback(async (url, options = {}) => {
+    if (!session?.access_token || !effectiveTenantId) {
+      throw new Error('Select a tenant before managing users.')
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${session.access_token}`,
+        'X-Tenant-Id': effectiveTenantId,
+      },
+    })
+
+    if (response.status === 401) {
+      throw new Error('Your session is no longer valid. Please sign in again.')
+    }
+
+    return response
+  }, [effectiveTenantId, session?.access_token])
+
+  const loadPlatformTenants = useCallback(async () => {
+    if (!session?.access_token || !canSelectTenant) return
+
+    setIsLoadingPlatformTenants(true)
+    setPlatformTenantsError('')
+
+    try {
+      const search = new URLSearchParams({ page: '1', pageSize: '200' })
+      const response = await fetchWithTenantAuth(`${platformTenantsUrl}?${search.toString()}`)
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(getAdminErrorMessage(response, payload, 'Unable to load tenants.'))
+      }
+
+      const tenants = normalizePlatformTenants(payload)
+      setPlatformTenants(tenants)
+      setSelectedTenantId((current) => {
+        if (current && tenants.some((tenant) => tenant.tenantId === current)) return current
+        if (session?.tenant_id && tenants.some((tenant) => tenant.tenantId === session.tenant_id)) return session.tenant_id
+        return tenants[0]?.tenantId || ''
+      })
+    } catch (nextError) {
+      setPlatformTenants([])
+      setPlatformTenantsError(nextError.message || 'Unable to load tenants.')
+    } finally {
+      setIsLoadingPlatformTenants(false)
+    }
+  }, [canSelectTenant, fetchWithTenantAuth, session])
+
+  useEffect(() => {
+    loadPlatformTenants()
+  }, [loadPlatformTenants])
 
   const loadAdminData = useCallback(async () => {
-    if (!session?.access_token || !session?.tenant_id || !canViewUsers) return
+    if (!session?.access_token || !effectiveTenantId || !canViewUsers) return
 
     setIsLoading(true)
     setError('')
 
     try {
       const [usersResponse, rolesResponse, tiersResponse, scopesResponse] = await Promise.all([
-        fetchWithTenantAuth(adminUsersUrl),
-        fetchWithTenantAuth(adminRolesUrl),
-        fetchWithTenantAuth(adminSensitivityTiersUrl),
-        fetchWithTenantAuth(adminScopeOptionsUrl),
+        adminTenantFetch(adminUsersUrl),
+        adminTenantFetch(adminRolesUrl),
+        adminTenantFetch(adminSensitivityTiersUrl),
+        adminTenantFetch(adminScopeOptionsUrl),
       ])
 
       const [usersPayload, rolesPayload, tiersPayload, scopesPayload] = await Promise.all([
@@ -248,7 +343,7 @@ export default function AdminPage() {
       setScopeOptions(normalizeScopeOptions(scopesResponse.ok ? scopesPayload : {}))
       setMode('live')
     } catch (nextError) {
-      setUsers(buildFallbackUser(currentUser))
+      setUsers(canSelectTenant ? [] : buildFallbackUser(currentUser))
       setRoleOptions(normalizeRoleOptions({}))
       setTierOptions(normalizeTierOptions({}))
       setScopeOptions(normalizeScopeOptions({}))
@@ -257,7 +352,7 @@ export default function AdminPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [canViewUsers, currentUser, fetchWithTenantAuth, session])
+  }, [adminTenantFetch, canSelectTenant, canViewUsers, currentUser, effectiveTenantId, session?.access_token])
 
   useEffect(() => {
     loadAdminData()
@@ -459,6 +554,11 @@ export default function AdminPage() {
       return
     }
 
+    if (!effectiveTenantId) {
+      setFormError('Select a tenant before saving this user.')
+      return
+    }
+
     setIsSaving(true)
 
     const payload = {
@@ -475,7 +575,7 @@ export default function AdminPage() {
     try {
       if (mode === 'live') {
         const url = modalMode === 'create' ? adminUsersUrl : `${adminUsersUrl}/${form.userId}`
-        const response = await fetchWithTenantAuth(url, {
+        const response = await adminTenantFetch(url, {
           method: modalMode === 'create' ? 'POST' : 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -531,7 +631,7 @@ export default function AdminPage() {
 
     try {
       if (mode === 'live') {
-        const response = await fetchWithTenantAuth(targetUrl, {
+        const response = await adminTenantFetch(targetUrl, {
           method: isDelete ? 'DELETE' : 'POST',
         })
         const payload = await response.json().catch(() => ({}))
@@ -567,7 +667,7 @@ export default function AdminPage() {
 
     try {
       if (mode === 'live') {
-        const response = await fetchWithTenantAuth(`${adminUsersUrl}/${user.userId}/send-invite`, {
+        const response = await adminTenantFetch(`${adminUsersUrl}/${user.userId}/send-invite`, {
           method: 'POST',
         })
         const payload = await response.json().catch(() => ({}))
@@ -686,9 +786,9 @@ export default function AdminPage() {
       <SectionHeader
         eyebrow="Administration"
         title="Admin"
-        subtitle="Manage tenant users, roles, access tiers, and scope boundaries from one place."
+        subtitle={canSelectTenant ? 'Manage users across tenants by choosing the tenant context first.' : 'Manage tenant users, roles, access tiers, and scope boundaries from one place.'}
         actions={canCreateUsers ? (
-          <button type="button" className="primary-button" onClick={openCreateModal}>
+          <button type="button" className="primary-button" onClick={openCreateModal} disabled={canSelectTenant && !effectiveTenantId}>
             <Plus size={16} />
             Add user
           </button>
@@ -722,7 +822,11 @@ export default function AdminPage() {
         <div className="panel-header">
           <div>
             <h3>Users</h3>
-            <p>Search, filter, and manage admissions access at the tenant level.</p>
+            <p>
+              {canSelectTenant
+                ? `Search, filter, and manage users for ${selectedTenant ? buildTenantLabel(selectedTenant) : 'the selected tenant'}.`
+                : 'Search, filter, and manage admissions access at the tenant level.'}
+            </p>
           </div>
           <div className="pill-row compact">
             <span className="tag">{mode === 'live' ? 'Live admin API' : 'Local fallback mode'}</span>
@@ -737,6 +841,21 @@ export default function AdminPage() {
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="today-filter-selects">
+            {canSelectTenant ? (
+              <label className="auth-field compact-field admin-tenant-field">
+                <span>Tenant</span>
+                <select
+                  value={selectedTenantId}
+                  onChange={(event) => setSelectedTenantId(event.target.value)}
+                  disabled={isLoadingPlatformTenants}
+                >
+                  <option value="">Select tenant</option>
+                  {platformTenants.map((tenant) => (
+                    <option key={tenant.tenantId} value={tenant.tenantId}>{buildTenantLabel(tenant)}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="auth-field compact-field">
               <span>Status</span>
               <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -757,15 +876,18 @@ export default function AdminPage() {
             </label>
           </div>
           <div className="pill-row compact">
-            <button type="button" className="secondary-button" onClick={loadAdminData}>
+            <button type="button" className="secondary-button" onClick={loadAdminData} disabled={canSelectTenant && !effectiveTenantId}>
               <RotateCcw size={16} />
               Refresh
             </button>
           </div>
+          {platformTenantsError ? <p className="muted-copy">{platformTenantsError}</p> : null}
           {error ? <p className="muted-copy">{error}</p> : null}
         </div>
 
-        {isLoading ? (
+        {canSelectTenant && !effectiveTenantId ? (
+          <p className="muted-copy">Select a tenant to load users.</p>
+        ) : isLoading ? (
           <p className="muted-copy">Loading admin users...</p>
         ) : filteredUsers.length ? (
           <div className="admin-user-list">
@@ -1004,6 +1126,23 @@ export default function AdminPage() {
             </div>
 
             <form className="auth-form course-modal-body admin-user-form" onSubmit={handleSubmit}>
+              {canSelectTenant ? (
+                <label className="auth-field">
+                  <span>Tenant</span>
+                  <select
+                    value={selectedTenantId}
+                    onChange={(event) => setSelectedTenantId(event.target.value)}
+                    required
+                    disabled={modalMode === 'edit' || isSaving}
+                  >
+                    <option value="">Select tenant</option>
+                    {platformTenants.map((tenant) => (
+                      <option key={tenant.tenantId} value={tenant.tenantId}>{buildTenantLabel(tenant)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
               <div className="admin-form-grid">
                 <label className="auth-field">
                   <span>Display name</span>

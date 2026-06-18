@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import AuthScreen from './components/AuthScreen'
 import ProtectedRoute from './components/ProtectedRoute'
+import WorkspaceAssistant from './components/WorkspaceAssistant'
 import { useAuth } from './context/AuthContext'
 import TodaysWorkPage from './pages/TodaysWorkPage'
 import StudentsPage from './pages/StudentsPage'
@@ -44,6 +45,7 @@ import AdmittedYieldPage from './pages/AdmittedYieldPage'
 import DepositMeltPage from './pages/DepositMeltPage'
 import ReportingPage from './pages/ReportingPage'
 import AdminPage from './pages/AdminPage'
+import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
 import { ROLE_KEYS } from './lib/rbac'
 
@@ -135,7 +137,13 @@ const navItems = [
     to: '/admin',
     label: 'Admin',
     icon: Settings,
-    anyAccess: [{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }],
+    anyAccess: [{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }, { permissions: ['platform_tenants_view'] }, { permissions: ['platform_users_view'] }, { permissions: ['platform_users_manage'] }],
+  },
+  {
+    to: '/platform/tenants',
+    label: 'Tenants',
+    icon: Landmark,
+    access: { permissions: ['platform_tenants_view'] },
   },
 ]
 
@@ -183,6 +191,7 @@ export default function App() {
     if (location.pathname.startsWith('/melt')) return 'Deposit / Melt'
     if (location.pathname.startsWith('/reporting')) return 'Reporting'
     if (location.pathname.startsWith('/admin')) return 'Admin'
+    if (location.pathname.startsWith('/platform')) return 'Platform'
     if (location.pathname.startsWith('/profile')) return 'User Profile'
     if (location.pathname.startsWith('/prospects')) return 'Prospect Portal'
     return "Today's Work"
@@ -499,10 +508,13 @@ export default function App() {
           <Route path="/melt" element={<ProtectedRoute anyAccess={[{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }]}><DepositMeltPage /></ProtectedRoute>} />
           <Route path="/connectors" element={<ProtectedRoute access={{ permissions: ['manage_integrations'] }}><ConnectorsPage /></ProtectedRoute>} />
           <Route path="/reporting" element={<ProtectedRoute access={{ permissions: ['view_dashboards'] }}><ReportingPage /></ProtectedRoute>} />
-          <Route path="/admin" element={<ProtectedRoute anyAccess={[{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }]}><AdminPage /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute anyAccess={[{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }, { permissions: ['platform_tenants_view'] }, { permissions: ['platform_users_view'] }, { permissions: ['platform_users_manage'] }]}><AdminPage /></ProtectedRoute>} />
+          <Route path="/platform/tenants" element={<ProtectedRoute access={{ permissions: ['platform_tenants_view'] }}><PlatformTenantsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute access={{ roles: [...ROLE_KEYS.counselor, ...ROLE_KEYS.processor, ...ROLE_KEYS.reviewer, ...ROLE_KEYS.director, ...ROLE_KEYS.trustAnalyst, ...ROLE_KEYS.registrarTransfer, ...ROLE_KEYS.financialAid, ...ROLE_KEYS.readOnly, ...ROLE_KEYS.integrationService] }}><UserProfilePage /></ProtectedRoute>} />
         </Routes>
       </main>
+
+      <WorkspaceAssistant currentUser={currentUser} />
 
       {uploadState.state !== 'idle' && isUploadModalOpen ? (
         <div className="modal-scrim" role="presentation">

@@ -241,6 +241,10 @@ export const students = [
       { term: 'Junior', gpa: 3.8, credits: 6 },
       { term: 'Senior', gpa: 4.0, credits: 6 },
     ],
+    testScores: [
+      { test: 'ACT', section: 'Composite', score: 29, date: 'Oct 2025' },
+      { test: 'SAT', section: 'Total', score: 1340, date: 'Nov 2025' },
+    ],
     recommendation: {
       summary: 'Recommend scholarship messaging and deposit acceleration campaign.',
       fitNarrative: 'High academic confidence plus high-intent digital behavior makes this prospect ripe for fast conversion.',

@@ -48,6 +48,123 @@ function formatCredits(value) {
   return Number.isInteger(number) ? String(number) : number.toFixed(1)
 }
 
+function getStudentOverallGpa(student) {
+  const candidates = [
+    student?.gpa,
+    student?.cumulativeGpa,
+    student?.cumulativeGPA,
+    student?.totalGradePoints,
+    student?.demographic?.cumulativeGpa,
+    student?.demographic?.totalGradePoints,
+    ...(student?.transcripts || []).map((transcript) => transcript.rawDocument?.grandGPA?.cumulativeGPA),
+    ...(student?.transcripts || []).map((transcript) => transcript.rawDocument?.demographic?.cumulativeGpa),
+    ...(student?.transcripts || []).map((transcript) => transcript.rawDocument?.demographic?.totalGradePoints),
+  ]
+
+  return candidates.find((value) => {
+    const number = Number(value)
+    return Number.isFinite(number) && number > 0
+  })
+}
+
+function formatConfidence(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(value)
+  if (Number.isNaN(number)) return '-'
+  const percent = number <= 1 ? number * 100 : number
+  return `${percent.toFixed(1)}%`
+}
+
+function getCourseValue(course, keys, fallback = '') {
+  for (const key of keys) {
+    const value = course?.[key]
+    if (value !== null && value !== undefined && value !== '') return value
+  }
+  return fallback
+}
+
+function getCourseSubject(course) {
+  return getCourseValue(course, ['Subject', 'subject'], '')
+}
+
+function getCourseId(course) {
+  return getCourseValue(course, ['CourseId', 'courseId', 'course'], '')
+}
+
+function getCourseTitle(course) {
+  return getCourseValue(course, ['CourseTitle', 'courseTitle', 'title'], '')
+}
+
+function getCourseNumber(course) {
+  return getCourseValue(course, ['Course Number', 'courseNumber', 'number'], '')
+}
+
+function getCourseCredits(course) {
+  return getCourseValue(course, ['credit', 'credits', 'creditAttempted'], '')
+}
+
+function getCourseConfidence(course) {
+  return getCourseValue(course, ['confidenceScore', 'confidence'], '')
+}
+
+function getTranscriptDocumentUrl(transcript) {
+  return getFirstValue(
+    transcript?.documentUrl,
+    transcript?.pdfUrl,
+    transcript?.fileUrl,
+    transcript?.sourceUrl,
+    transcript?.downloadUrl,
+    transcript?.rawDocument?.documentUrl,
+    transcript?.rawDocument?.pdfUrl,
+    transcript?.rawDocument?.fileUrl,
+    transcript?.rawDocument?.sourceUrl,
+    transcript?.rawDocument?.downloadUrl,
+    transcript?.rawDocument?.metadata?.documentUrl,
+    transcript?.rawDocument?.metadata?.pdfUrl,
+    transcript?.rawDocument?.metadata?.fileUrl,
+    transcript?.rawDocument?.metadata?.sourceUrl,
+  )
+}
+
+function getTranscriptDocumentUploadId(transcript) {
+  const rawDocumentId = getFirstValue(
+    transcript?.rawDocument?.documentId,
+    transcript?.rawDocument?.document_id,
+    transcript?.rawDocument?.metadata?.documentId,
+    transcript?.rawDocument?.metadata?.document_id,
+    transcript?.rawDocument?.externalExtraction?.documentId,
+    transcript?.rawDocument?.externalExtraction?.document_id,
+    transcript?.rawDocument?.metadata?.externalExtraction?.documentId,
+    transcript?.rawDocument?.metadata?.externalExtraction?.document_id,
+  )
+  if (rawDocumentId) return rawDocumentId
+
+  const uploadAlias = getFirstValue(
+    transcript?.documentUploadId,
+    transcript?.document_upload_id,
+    transcript?.documentUpload?.id,
+    transcript?.document_upload?.id,
+    transcript?.uploadId,
+    transcript?.upload_id,
+    transcript?.rawDocument?.documentUploadId,
+    transcript?.rawDocument?.document_upload_id,
+    transcript?.rawDocument?.documentUpload?.id,
+    transcript?.rawDocument?.document_upload?.id,
+    transcript?.rawDocument?.uploadId,
+    transcript?.rawDocument?.upload_id,
+    transcript?.rawDocument?.metadata?.documentUploadId,
+    transcript?.rawDocument?.metadata?.document_upload_id,
+    transcript?.rawDocument?.externalExtraction?.documentUploadId,
+    transcript?.rawDocument?.externalExtraction?.document_upload_id,
+    transcript?.rawDocument?.metadata?.externalExtraction?.documentUploadId,
+    transcript?.rawDocument?.metadata?.externalExtraction?.document_upload_id,
+  )
+  const topLevelDocumentId = getFirstValue(transcript?.documentId, transcript?.document_id)
+
+  if (topLevelDocumentId && uploadAlias && topLevelDocumentId !== uploadAlias) return topLevelDocumentId
+  return uploadAlias
+}
+
 function gradeToPoints(grade) {
   const normalized = String(grade || '').trim().toUpperCase()
   const gradeMap = {
@@ -69,6 +186,9 @@ function gradeToPoints(grade) {
 
 function getCourseSubjectLabel(course) {
   const courseText = [
+    getCourseSubject(course),
+    getCourseId(course),
+    getCourseTitle(course),
     course.subject,
     course.courseId,
     course.course,
@@ -92,7 +212,7 @@ function buildSubjectGpaRows(student) {
 
   courses.forEach((course) => {
     const points = gradeToPoints(course.grade)
-    const credits = Number(course.credit ?? course.credits ?? course.creditAttempted ?? 0)
+    const credits = Number(getCourseCredits(course) || 0)
     if (points === null || !Number.isFinite(credits) || credits <= 0) return
 
     const subject = getCourseSubjectLabel(course)
@@ -122,6 +242,129 @@ function buildSubjectGpaRows(student) {
     { subject: 'Science', gpa: Math.max(0, Math.min(4, base + 0.05)), credits: 8, courseCount: 2 },
     { subject: 'General Education', gpa: Math.max(0, Math.min(4, base)), credits: 9, courseCount: 3 },
   ]
+}
+
+function buildAcademicTermRows(student) {
+  if (!student) return []
+  if (Array.isArray(student.termGpa) && student.termGpa.length) return student.termGpa
+
+  const termMap = new Map()
+  ;(student.transcripts || []).flatMap((transcript) => transcript.courses || []).forEach((course) => {
+    const term = getCourseValue(course, ['term'], '')
+    const year = getCourseValue(course, ['year'], '')
+    const label = [term, year].filter(Boolean).join(' ')
+    const points = gradeToPoints(course.grade)
+    const credits = Number(getCourseCredits(course) || 0)
+    if (!label || points === null || !Number.isFinite(credits) || credits <= 0) return
+
+    const current = termMap.get(label) || { term: label, qualityPoints: 0, credits: 0 }
+    current.qualityPoints += points * credits
+    current.credits += credits
+    termMap.set(label, current)
+  })
+
+  return Array.from(termMap.values()).map((row) => ({
+    term: row.term,
+    gpa: row.credits ? row.qualityPoints / row.credits : null,
+    credits: row.credits,
+  }))
+}
+
+function getFirstValue(...values) {
+  return values.find((value) => value !== null && value !== undefined && value !== '')
+}
+
+function getTranscriptDemographic(transcript) {
+  return transcript?.demographic || transcript?.rawDocument?.demographic || transcript?.rawDocument?.Demographic || {}
+}
+
+function getTestScoreSources(student) {
+  if (!student) return []
+
+  return [
+    student,
+    student.demographic,
+    ...(student.transcripts || []).map(getTranscriptDemographic),
+    ...(student.transcripts || []).map((transcript) => transcript.rawDocument),
+  ].filter((source) => source && typeof source === 'object')
+}
+
+function buildTestScoreRows(student) {
+  if (!student) return []
+  const rows = []
+
+  const addScore = ({ test, section = 'Composite', score, date }) => {
+    const resolvedScore = getFirstValue(score)
+    if (resolvedScore === undefined) return
+    const duplicate = rows.some((row) => (
+      row.test === test
+      && row.section === section
+      && String(row.score) === String(resolvedScore)
+      && row.date === (date || 'Date pending')
+    ))
+    if (duplicate) return
+
+    rows.push({
+      id: `${test}-${section}-${rows.length}`,
+      test,
+      section,
+      score: resolvedScore,
+      date: date || 'Date pending',
+    })
+  }
+
+  const testScores = Array.isArray(student.testScores)
+    ? student.testScores
+    : Array.isArray(student.test_scores)
+      ? student.test_scores
+      : []
+
+  testScores.forEach((item) => {
+    const test = String(item.test || item.type || item.name || '').toUpperCase()
+    if (test === 'ACT' || test.includes('ACT')) {
+      addScore({
+        test: 'ACT',
+        section: item.section || item.subject || 'Composite',
+        score: getFirstValue(item.score, item.composite, item.value),
+        date: item.date || item.takenAt || item.testDate,
+      })
+    }
+    if (test === 'SAT' || test.includes('SAT')) {
+      addScore({
+        test: 'SAT',
+        section: item.section || item.subject || 'Total',
+        score: getFirstValue(item.score, item.total, item.value),
+        date: item.date || item.takenAt || item.testDate,
+      })
+    }
+  })
+
+  getTestScoreSources(student).forEach((source) => {
+    const act = source.act || source.ACT || source.actScores || source.act_scores || {}
+    addScore({ test: 'ACT', section: 'English', score: getFirstValue(source.actEnglishScore, act.english), date: getFirstValue(source.actEnglishDate, act.englishDate, act.date, act.testDate) })
+    addScore({ test: 'ACT', section: 'Math', score: getFirstValue(source.actMathScore, act.math), date: getFirstValue(source.actMathDate, act.mathDate, act.date, act.testDate) })
+    addScore({ test: 'ACT', section: 'Reading', score: getFirstValue(source.actReadingScore, act.reading), date: getFirstValue(source.actReadingDate, act.readingDate, act.date, act.testDate) })
+    addScore({ test: 'ACT', section: 'Science', score: getFirstValue(source.actSciencesScore, source.actScienceScore, act.science, act.sciences), date: getFirstValue(source.actSciencesDate, source.actScienceDate, act.scienceDate, act.sciencesDate, act.date, act.testDate) })
+    addScore({ test: 'ACT', section: 'STEM', score: getFirstValue(source.actStemScore, source.actSTEMScore, act.stem), date: getFirstValue(source.actStemDate, source.actSTEMDate, act.stemDate, act.date, act.testDate) })
+    addScore({
+      test: 'ACT',
+      section: 'Composite',
+      score: getFirstValue(source.actCompositeScore, source.actComposite, source.actScore, source.act_score, act.composite, act.score),
+      date: getFirstValue(source.actCompositeDate, source.actDate, source.act_date, act.compositeDate, act.date, act.takenAt, act.testDate),
+    })
+
+    const sat = source.sat || source.SAT || source.satScores || source.sat_scores || {}
+    addScore({ test: 'SAT', section: 'Math', score: getFirstValue(source.satMathScore, sat.math), date: getFirstValue(source.satMathDate, sat.mathDate, sat.date, sat.testDate) })
+    addScore({ test: 'SAT', section: 'Reading', score: getFirstValue(source.satReadingScore, sat.reading), date: getFirstValue(source.satReadingDate, sat.readingDate, sat.date, sat.testDate) })
+    addScore({
+      test: 'SAT',
+      section: 'Total',
+      score: getFirstValue(source.satTotalScore, source.satTotal, source.satScore, source.sat_score, sat.total, sat.score),
+      date: getFirstValue(source.satTotalDate, source.satDate, source.sat_date, sat.totalDate, sat.date, sat.takenAt, sat.testDate),
+    })
+  })
+
+  return rows
 }
 
 function getChecklistStatusLabel(status) {
@@ -282,6 +525,9 @@ export default function StudentProfilePage() {
   const [timelineEvents, setTimelineEvents] = useState([])
   const [timelineMode, setTimelineMode] = useState('derived')
   const [timelineError, setTimelineError] = useState('')
+  const [documentViewerUrl, setDocumentViewerUrl] = useState('')
+  const [documentViewerError, setDocumentViewerError] = useState('')
+  const [isLoadingDocumentViewer, setIsLoadingDocumentViewer] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [studentId, students])
   const visibleTabs = useMemo(() => {
@@ -290,7 +536,6 @@ export default function StudentProfilePage() {
       { key: 'timeline', label: 'Timeline', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'checklist', label: 'Checklist', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'documents', label: 'Documents', allowed: hasAnyPermission(['view_student_360']) },
-      { key: 'evaluation', label: 'Evaluation', allowed: hasSensitivityTier('academic_record') },
       { key: 'decisions', label: 'Decisions', allowed: hasAnyPermission(['view_decision_packet', 'release_decision']) },
       { key: 'trust', label: 'Trust', allowed: hasAnyPermission(['view_trust_flags', 'manage_trust_cases']) && hasSensitivityTier('trust_fraud_flags') },
       { key: 'yield', label: 'Yield / Deposit', allowed: hasAnyPermission(['view_student_360', 'view_dashboards']) },
@@ -377,20 +622,22 @@ export default function StudentProfilePage() {
     [checklistStats, readiness, student],
   )
   const displayTimelineEvents = timelineEvents.length ? timelineEvents : derivedTimelineEvents
+  const academicTermRows = useMemo(() => buildAcademicTermRows(student), [student])
   const academicSummary = useMemo(() => {
     if (!student) return { overallGpa: '-', totalCredits: '-' }
 
-    const termCredits = (student.termGpa || []).reduce((sum, row) => {
+    const termCredits = academicTermRows.reduce((sum, row) => {
       const credits = Number(row.credits)
       return Number.isNaN(credits) ? sum : sum + credits
     }, 0)
 
     return {
-      overallGpa: formatGpa(student.gpa),
+      overallGpa: formatGpa(getStudentOverallGpa(student)),
       totalCredits: formatCredits(termCredits || student.creditsAccepted),
     }
-  }, [student])
+  }, [academicTermRows, student])
   const subjectGpaRows = useMemo(() => buildSubjectGpaRows(student), [student])
+  const testScoreRows = useMemo(() => buildTestScoreRows(student), [student])
 
   const loadTimeline = useCallback(async () => {
     if (!studentId || !session?.access_token || !session?.tenant_id) return
@@ -417,6 +664,62 @@ export default function StudentProfilePage() {
   useEffect(() => {
     loadTimeline()
   }, [loadTimeline])
+
+  useEffect(() => {
+    let isActive = true
+    let objectUrl = ''
+
+    async function loadDocumentViewer() {
+      const documentUploadId = getTranscriptDocumentUploadId(selectedTranscript)
+      const fallbackUrl = getTranscriptDocumentUrl(selectedTranscript)
+
+      setDocumentViewerError('')
+      setDocumentViewerUrl('')
+      setIsLoadingDocumentViewer(false)
+
+      if (!selectedTranscript) return
+
+      if (!documentUploadId) {
+        if (fallbackUrl) setDocumentViewerUrl(fallbackUrl)
+        else setDocumentViewerError('No document upload ID was returned for this transcript.')
+        return
+      }
+
+      if (!session?.access_token || !session?.tenant_id) {
+        setDocumentViewerError('Sign in is required to load the uploaded document.')
+        return
+      }
+
+      setIsLoadingDocumentViewer(true)
+      try {
+        const response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${documentUploadId}/content`)
+
+        if (!response.ok) {
+          throw new Error(`Document load failed: ${response.status}`)
+        }
+
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        if (isActive) setDocumentViewerUrl(objectUrl)
+      } catch (error) {
+        if (!isActive) return
+        if (fallbackUrl) {
+          setDocumentViewerUrl(fallbackUrl)
+        } else {
+          setDocumentViewerError(error.message || 'Document load failed.')
+        }
+      } finally {
+        if (isActive) setIsLoadingDocumentViewer(false)
+      }
+    }
+
+    loadDocumentViewer()
+
+    return () => {
+      isActive = false
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [fetchWithTenantAuth, selectedTranscript, session])
 
   if ((isLoadingStudents || isLoadingDetail) && !studentDetail) {
     return (
@@ -536,6 +839,94 @@ export default function StudentProfilePage() {
             <div><span>Advisor</span><strong>{student.advisor || 'Unassigned'}</strong></div>
           </div>
         </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Academic signal</h3>
+              <p>Show trajectory, not just one extracted GPA.</p>
+            </div>
+          </div>
+          <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Academic evaluation details are hidden for your access level.</p>}>
+          <div className="metric-cluster academic-summary">
+            <div><span>Overall GPA</span><strong>{academicSummary.overallGpa}</strong></div>
+            <div><span>Total credits</span><strong>{academicSummary.totalCredits}</strong></div>
+          </div>
+
+          <div className="chart-box lg">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={academicTermRows}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="term" />
+                <YAxis domain={[0, 4]} />
+                <Tooltip />
+                <Area type="monotone" dataKey="gpa" stroke="#18B7A6" fill="#18B7A622" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mini-table academic-term-table">
+            <div className="mini-table-head">
+              <span>Term</span><span>GPA</span><span>Credits</span>
+            </div>
+            {academicTermRows.map((row) => (
+              <div key={row.term} className="mini-table-row">
+                <span>{row.term}</span><span>{formatGpa(row.gpa)}</span><span>{formatCredits(row.credits)}</span>
+              </div>
+            ))}
+          </div>
+          </SensitivityGuard>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Subject GPA</h3>
+              <p>GPA grouped by academic subject using available course evidence.</p>
+            </div>
+          </div>
+          <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Subject GPA details are hidden for your access level.</p>}>
+          <div className="mini-table subject-gpa-table">
+            <div className="mini-table-head">
+              <span>Subject</span><span>GPA</span><span>Credits</span><span>Courses</span>
+            </div>
+            {subjectGpaRows.map((row) => (
+              <div key={row.subject} className="mini-table-row">
+                <span>{row.subject}</span>
+                <span>{formatGpa(row.gpa)}</span>
+                <span>{formatCredits(row.credits)}</span>
+                <span>{row.courseCount}</span>
+              </div>
+            ))}
+          </div>
+          </SensitivityGuard>
+        </article>
+
+        {testScoreRows.length ? (
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Test scores</h3>
+                <p>ACT and SAT scores supplied with the student record.</p>
+              </div>
+            </div>
+            <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Test score details are hidden for your access level.</p>}>
+            <div className="mini-table test-score-table">
+              <div className="mini-table-head">
+                <span>Test</span><span>Section</span><span>Score</span><span>Date</span>
+              </div>
+              {testScoreRows.map((row) => (
+                <div key={row.id} className="mini-table-row">
+                  <span>{row.test}</span>
+                  <span>{row.section}</span>
+                  <span>{row.score}</span>
+                  <span>{row.date}</span>
+                </div>
+              ))}
+            </div>
+            </SensitivityGuard>
+          </article>
+        ) : null}
       </section>
       ) : null}
 
@@ -648,72 +1039,6 @@ export default function StudentProfilePage() {
       </section>
       ) : null}
 
-      {activeTab === 'evaluation' ? (
-      <section className="dashboard-grid profile-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Academic signal</h3>
-              <p>Show trajectory, not just one extracted GPA.</p>
-            </div>
-          </div>
-          <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Academic evaluation details are hidden for your access level.</p>}>
-          <div className="metric-cluster academic-summary">
-            <div><span>Overall GPA</span><strong>{academicSummary.overallGpa}</strong></div>
-            <div><span>Total credits</span><strong>{academicSummary.totalCredits}</strong></div>
-          </div>
-
-          <div className="chart-box lg">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={student.termGpa || []}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="term" />
-                <YAxis domain={[0, 4]} />
-                <Tooltip />
-                <Area type="monotone" dataKey="gpa" stroke="#18B7A6" fill="#18B7A622" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="mini-table">
-            <div className="mini-table-head">
-              <span>Term</span><span>GPA</span><span>Credits</span>
-            </div>
-            {student.termGpa?.map((row) => (
-              <div key={row.term} className="mini-table-row">
-                <span>{row.term}</span><span>{formatGpa(row.gpa)}</span><span>{formatCredits(row.credits)}</span>
-              </div>
-            ))}
-          </div>
-          </SensitivityGuard>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Subject GPA</h3>
-              <p>GPA grouped by academic subject using available course evidence.</p>
-            </div>
-          </div>
-          <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Subject GPA details are hidden for your access level.</p>}>
-          <div className="mini-table subject-gpa-table">
-            <div className="mini-table-head">
-              <span>Subject</span><span>GPA</span><span>Credits</span><span>Courses</span>
-            </div>
-            {subjectGpaRows.map((row) => (
-              <div key={row.subject} className="mini-table-row">
-                <span>{row.subject}</span>
-                <span>{formatGpa(row.gpa)}</span>
-                <span>{formatCredits(row.credits)}</span>
-                <span>{row.courseCount}</span>
-              </div>
-            ))}
-          </div>
-          </SensitivityGuard>
-        </article>
-      </section>
-      ) : null}
-
       {activeTab === 'decisions' ? (
         <section className="panel">
           <div className="panel-header">
@@ -800,7 +1125,7 @@ export default function StudentProfilePage() {
 
       {selectedTranscript ? (
         <div className="modal-scrim" onClick={() => setSelectedTranscript(null)} role="presentation">
-          <div className="modal-panel" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="modal-panel transcript-course-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <div className="panel-header">
               <div>
                 <h3>{selectedTranscript.institution || selectedTranscript.source}</h3>
@@ -817,25 +1142,61 @@ export default function StudentProfilePage() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Course</th>
-                        <th>Title</th>
-                        <th>Term</th>
+                        <th>Subject</th>
+                        <th>Course ID</th>
+                        <th>Course title</th>
+                        <th>Course #</th>
                         <th>Credits</th>
                         <th>Grade</th>
+                        <th>Term</th>
+                        <th>Year</th>                        
+                        <th>Rigor</th>
+                        <th>Confidence</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedTranscript.courses.map((course) => (
-                        <tr key={`${selectedTranscript.id}-${course.courseId}-${course.term}-${course.year}`}>
-                          <td><strong>{course.courseId || course.subject}</strong></td>
-                          <td>{course.courseTitle}</td>
-                          <td>{[course.term, course.year].filter(Boolean).join(' ') || '-'}</td>
-                          <td>{course.credit || course.creditAttempted || '-'}</td>
+                      {selectedTranscript.courses.map((course, index) => (
+                        <tr key={`${selectedTranscript.id}-${getCourseId(course)}-${getCourseValue(course, ['term'], '')}-${getCourseValue(course, ['year'], '')}-${index}`}>
+                          <td>{getCourseSubject(course) || '-'}</td>
+                          <td><strong>{getCourseId(course) || '-'}</strong></td>
+                          <td>{getCourseTitle(course) || '-'}</td>
+                          <td>{getCourseNumber(course) || '-'}</td>
+                          <td>{formatCredits(getCourseCredits(course))}</td>
                           <td>{course.grade || '-'}</td>
+                          <td>{getCourseValue(course, ['term'], '-')}</td>
+                          <td>{getCourseValue(course, ['year'], '-')}</td>                          
+                          <td>{getCourseValue(course, ['rigor'], '-') || '-'}</td>
+                          <td>{formatConfidence(getCourseConfidence(course))}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
+                  <div className="transcript-pdf-section">
+                    <div className="panel-header">
+                      <div>
+                        <h3>Transcript document</h3>
+                        <p>Original PDF shown below the extracted course rows when a viewable document URL is available.</p>
+                      </div>
+                    </div>
+                    {isLoadingDocumentViewer ? (
+                      <div className="callout-card">
+                        <h4>Loading document</h4>
+                        <p>Fetching the uploaded PDF for this tenant.</p>
+                      </div>
+                    ) : documentViewerUrl ? (
+                      <iframe
+                        className="transcript-pdf-viewer"
+                        src={documentViewerUrl}
+                        title={`${selectedTranscript.institution || selectedTranscript.source || 'Transcript'} PDF`}
+                      />
+                    ) : (
+                      <div className="callout-card">
+                        <h4>PDF not available in this payload</h4>
+                        <p>{documentViewerError || 'The parsed results include extracted course data, but no uploaded document content is available for this transcript.'}</p>
+                        {getTranscriptDocumentUploadId(selectedTranscript) ? <p><strong>Document upload ID:</strong> {getTranscriptDocumentUploadId(selectedTranscript)}</p> : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <p className="muted-copy">Transcript detail is not available for your access level.</p>

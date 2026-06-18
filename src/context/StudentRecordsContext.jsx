@@ -18,6 +18,20 @@ function formatNumber(value, digits = 2) {
   return Number.isFinite(numeric) ? Number(numeric.toFixed(digits)) : 0
 }
 
+function formatPercent(value, digits = 1) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  const percent = numeric <= 1 ? numeric * 100 : numeric
+  return Number(percent.toFixed(digits))
+}
+
+function firstPositiveNumber(...values) {
+  return values.find((value) => {
+    const numeric = Number(value)
+    return Number.isFinite(numeric) && numeric > 0
+  })
+}
+
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
@@ -160,6 +174,27 @@ function validateParsedTranscript(parsed) {
   return ''
 }
 
+function buildTestScoresFromDemographic(demographic = {}) {
+  return [
+    { test: 'ACT', section: 'English', score: demographic.actEnglishScore, date: demographic.actEnglishDate },
+    { test: 'ACT', section: 'Math', score: demographic.actMathScore, date: demographic.actMathDate },
+    { test: 'ACT', section: 'Reading', score: demographic.actReadingScore, date: demographic.actReadingDate },
+    { test: 'ACT', section: 'Science', score: demographic.actSciencesScore, date: demographic.actSciencesDate },
+    { test: 'ACT', section: 'STEM', score: demographic.actStemScore, date: demographic.actStemDate },
+    { test: 'ACT', section: 'Composite', score: demographic.actCompositeScore, date: demographic.actCompositeDate },
+    { test: 'SAT', section: 'Math', score: demographic.satMathScore, date: demographic.satMathDate },
+    { test: 'SAT', section: 'Reading', score: demographic.satReadingScore, date: demographic.satReadingDate },
+    { test: 'SAT', section: 'Total', score: demographic.satTotalScore, date: demographic.satTotalDate },
+  ].filter((score) => score.score !== null && score.score !== undefined && score.score !== '')
+}
+
+function getLocalPdfUrl(file) {
+  if (!file || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return ''
+  const filename = String(file.name || '').toLowerCase()
+  if (file.type !== 'application/pdf' && !filename.endsWith('.pdf')) return ''
+  return URL.createObjectURL(file)
+}
+
 function mapParsedTranscript(parsed, file) {
   const demographic = parsed.demographic || {}
   const courses = parsed.courses || []
@@ -168,18 +203,23 @@ function mapParsedTranscript(parsed, file) {
   const firstName = demographic.firstName || 'Unknown'
   const lastName = demographic.lastName || 'Student'
   const studentId = resolveStudentId(parsed)
-  const cumulativeGpa = formatNumber(parsed.grandGPA?.cumulativeGPA || demographic.cumulativeGpa)
+  const cumulativeGpa = formatNumber(firstPositiveNumber(parsed.grandGPA?.cumulativeGPA, demographic.cumulativeGpa, demographic.totalGradePoints))
   const creditsEarned = formatNumber(parsed.grandGPA?.unitsEarned || demographic.totalCreditsEarned, 0)
   const typeLabel = metadata.document_type?.replaceAll('_', ' ') || 'transcript'
   const isFraudulent = Boolean(parsed.isFraudulent)
+  const documentUploadId = parsed.documentUploadId || parsed.document_id || parsed.documentId || metadata.externalExtraction?.documentUploadId || parsed.externalExtraction?.documentUploadId || ''
   const transcript = {
     id: parsed.documentId,
     source: file.name,
+    documentUrl: parsed.documentUrl || parsed.pdfUrl || parsed.fileUrl || parsed.sourceUrl || getLocalPdfUrl(file),
+    transcriptId: parsed.transcriptId || metadata.externalExtraction?.transcriptId || parsed.externalExtraction?.transcriptId || '',
+    documentUploadId,
+    documentId: documentUploadId,
     institution: institutionName,
     type: typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1),
     uploadedAt: new Date().toISOString(),
     status: isFraudulent ? 'Quarantined' : 'Certified draft',
-    confidence: formatNumber((metadata.parser_confidence || courses[0]?.confidenceScore || 0) * 100, 1),
+    confidence: formatPercent(metadata.parser_confidence || parsed.course_confidence_summary?.average || courses[0]?.confidenceScore || 0, 1),
     credits: creditsEarned,
     pages: Math.max(...courses.map((course) => course.pageNumber || 1), 1),
     owner: metadata.bedrock_used ? 'Decision Agent' : 'Transcript parser',
@@ -223,6 +263,7 @@ function mapParsedTranscript(parsed, file) {
         { label: 'Decision packet built', done: !isFraudulent },
       ],
       transcripts: [transcript],
+      testScores: buildTestScoresFromDemographic(demographic),
       termGpa: (parsed.termGPAs || []).map((term, index) => ({
         term: `${term.term} ${term.year || index + 1}`,
         gpa: formatNumber(term.simpleGPA),
