@@ -2,6 +2,7 @@ import {
   CHECKLIST_BLOCKING_STATUSES,
   CHECKLIST_STATUSES,
   PRIORITY_BANDS,
+  normalizePipelineStatus,
   READINESS_STATES,
   REASON_TO_ACT_CODES,
   WORK_SECTIONS,
@@ -97,7 +98,7 @@ function buildReasonToAct(student, checklistStats) {
     return { code: REASON_TO_ACT_CODES.needsReview, label: `${checklistStats.needsReviewCount} item${checklistStats.needsReviewCount === 1 ? '' : 's'} need review` }
   }
 
-  if (stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
+  if (stage.includes('complete') || stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
     return { code: REASON_TO_ACT_CODES.readyForDecision, label: 'Ready for decision' }
   }
 
@@ -127,7 +128,7 @@ export function getReadiness(student) {
     })
   }
 
-  if (stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
+  if (stage.includes('complete') || stage.includes('decision-ready') || stage.includes('ready for review') || checklistStats.completionPercent === 100) {
     return normalizeReadinessState(READINESS_STATES.readyForDecision)
   }
 
@@ -187,6 +188,7 @@ export function buildWorkItemFromStudent(student) {
     studentId: student.id,
     studentName: student.name,
     population,
+    pipelineStatus: normalizePipelineStatus(student.stage),
     stage: normalizeText(student.stage).replace(/\s+/g, '_') || 'incomplete',
     completionPercent: checklistStats.completionPercent,
     priority,
@@ -217,6 +219,10 @@ export function buildWorkItemFromStudent(student) {
     institutionGoal: student.institutionGoal || '',
     risk: student.risk || 'Low',
     lastActivity: student.lastActivity || 'Unknown',
+    lastContactedAt: student.lastContactedAt || student.last_contacted_at || '',
+    nextFollowUpAt: student.nextFollowUpAt || student.next_follow_up_at || '',
+    nextAction: student.nextAction || student.next_action || student.nextBestAction || '',
+    contactOutcome: student.contactOutcome || student.contact_outcome || '',
   }
 }
 

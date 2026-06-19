@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
+import { useStudentRecords } from '../context/StudentRecordsContext'
 import { getApiErrorMessage, normalizeItems, toYieldCard, yieldQueueUrl } from '../lib/operationsApi'
 import useDebouncedValue from '../lib/useDebouncedValue'
 
@@ -21,8 +22,34 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date)
 }
 
+function buildFallbackYieldItems(students) {
+  return (Array.isArray(students) ? students : [])
+    .filter((student) => {
+      const stage = String(student.stage || '').toLowerCase()
+      return stage.includes('admitted') || stage.includes('deposited') || stage.includes('committed')
+    })
+    .map((student) => {
+      const milestones = Array.isArray(student.postAdmitMilestones) ? student.postAdmitMilestones : []
+      const completeMilestones = milestones.filter((milestone) => milestone.status === 'Complete' || milestone.status === 'Waived').length
+      return {
+        id: `yield-${student.id}`,
+        studentId: student.id,
+        studentName: student.name,
+        program: student.program || student.degreeProgram || 'Program pending',
+        yieldScore: Math.round(Number(student.depositLikelihood || student.fitScore || 50)),
+        admitDate: student.admitDate || student.updatedAt || '',
+        depositStatus: String(student.stage || '').toLowerCase().includes('deposited') ? 'deposited' : 'not deposited',
+        milestoneCompletion: milestones.length ? Math.round((completeMilestones / milestones.length) * 100) : 0,
+        assignedCounselor: { name: student.advisor || 'Unassigned' },
+        lastActivityAt: student.updatedAt || student.lastActivity || '',
+        nextStep: student.nextAction || student.recommendation?.nextBestAction || 'Review next yield step',
+      }
+    })
+}
+
 export default function AdmittedYieldPage() {
   const { session, fetchWithTenantAuth } = useAuth()
+  const { students } = useStudentRecords()
   const [activeView, setActiveView] = useState('high_likelihood')
   const [query, setQuery] = useState('')
   const [items, setItems] = useState([])
@@ -50,12 +77,12 @@ export default function AdmittedYieldPage() {
 
       setItems(normalizeItems(payload, ['yield']).map(toYieldCard))
     } catch (nextError) {
-      setItems([])
+      setItems(buildFallbackYieldItems(students))
       setError(nextError.message || 'Unable to load admitted and yield students.')
     } finally {
       setIsLoading(false)
     }
-  }, [activeView, debouncedQuery, fetchWithTenantAuth, session])
+  }, [activeView, debouncedQuery, fetchWithTenantAuth, session, students])
 
   useEffect(() => {
     loadYield()

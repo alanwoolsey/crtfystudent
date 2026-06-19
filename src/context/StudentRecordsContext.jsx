@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
-import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS } from '../lib/admissionsWorkflow'
+import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS, normalizePipelineStatus } from '../lib/admissionsWorkflow'
 import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
 const StudentRecordsContext = createContext(null)
@@ -102,7 +102,7 @@ function normalizeStudentsPayload(payload) {
     sourceCategory: normalizeStudentValue(student?.sourceCategory || student?.source_category, ''),
     campaign: normalizeStudentValue(student?.campaign || student?.campaignName, ''),
     risk: normalizeStudentValue(student?.risk, 'Low'),
-    stage: normalizeStudentValue(student?.stage || student?.lifecycleStage || student?.lifecycle_stage, 'Unknown'),
+    stage: normalizePipelineStatus(student?.stage || student?.lifecycleStage || student?.lifecycle_stage),
     nextBestAction: normalizeStudentValue(student?.nextBestAction || student?.next_best_action || student?.suggestedAction?.label, ''),
   }))
 }
@@ -317,6 +317,76 @@ function updateStudentChecklistInCollection(currentStudents, studentId, nextChec
       ...student,
       checklist: nextChecklist,
       stage: nextStage,
+      lastActivity: 'Just now',
+    }
+  })
+}
+
+function updateStudentProgramInCollection(currentStudents, studentId, program) {
+  return currentStudents.map((student) => (
+    student.id === studentId
+      ? {
+          ...student,
+          program,
+          degreeProgram: program,
+          lastActivity: 'Just now',
+        }
+      : student
+  ))
+}
+
+function updateStudentWorkStateInCollection(currentStudents, studentId, patch) {
+  return currentStudents.map((student) => (
+    student.id === studentId
+      ? {
+          ...student,
+          ...patch,
+          lastActivity: patch.lastActivity || 'Just now',
+        }
+      : student
+  ))
+}
+
+function addStudentInteractionInCollection(currentStudents, studentId, interaction) {
+  return currentStudents.map((student) => (
+    student.id === studentId
+      ? {
+          ...student,
+          interactions: [interaction, ...(Array.isArray(student.interactions) ? student.interactions : [])],
+          lastContactedAt: interaction.occurredAt || student.lastContactedAt,
+          contactOutcome: interaction.outcome || student.contactOutcome,
+          nextFollowUpAt: interaction.nextFollowUpAt || student.nextFollowUpAt,
+          nextAction: interaction.nextAction || student.nextAction,
+          lastActivity: 'Just now',
+        }
+      : student
+  ))
+}
+
+function addStudentHandoffInCollection(currentStudents, studentId, handoff) {
+  return currentStudents.map((student) => (
+    student.id === studentId
+      ? {
+          ...student,
+          handoffs: [handoff, ...(Array.isArray(student.handoffs) ? student.handoffs : [])],
+          nextAction: handoff.blocker || handoff.summary || student.nextAction,
+          lastActivity: 'Just now',
+        }
+      : student
+  ))
+}
+
+function updateStudentMilestoneInCollection(currentStudents, studentId, milestone) {
+  return currentStudents.map((student) => {
+    if (student.id !== studentId) return student
+    const milestones = Array.isArray(student.postAdmitMilestones) ? student.postAdmitMilestones : []
+    const nextMilestones = milestones.some((item) => item.id === milestone.id)
+      ? milestones.map((item) => item.id === milestone.id ? { ...item, ...milestone } : item)
+      : [milestone, ...milestones]
+
+    return {
+      ...student,
+      postAdmitMilestones: nextMilestones,
       lastActivity: 'Just now',
     }
   })
@@ -754,6 +824,380 @@ export function StudentRecordsProvider({ children }) {
     }
   }, [fetchWithTenantAuth, session, students])
 
+  const updateStudentProgram = useCallback(async ({ studentId, program }) => {
+    const nextProgram = String(program || '').trim()
+    if (!studentId || !nextProgram) {
+      throw new Error('studentId and program are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    if (existingStudent) {
+      setStudents((current) => updateStudentProgramInCollection(current, studentId, nextProgram))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) {
+      return { ...(existingStudent || { id: studentId }), program: nextProgram, degreeProgram: nextProgram }
+    }
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          program: nextProgram,
+          degreeProgram: nextProgram,
+        }),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) {
+        return { ...(existingStudent || { id: studentId }), program: nextProgram, degreeProgram: nextProgram }
+      }
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const updatedStudent = {
+        ...(normalizeStudentDetailPayload(payload) || existingStudent || { id: studentId }),
+        program: nextProgram,
+        degreeProgram: nextProgram,
+        programInterest: nextProgram,
+      }
+
+      setStudents((current) => current.some((student) => student.id === studentId)
+        ? current.map((student) => student.id === studentId ? { ...student, ...updatedStudent } : student)
+        : current)
+
+      return updatedStudent
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const updateStudentWorkState = useCallback(async ({ studentId, patch }) => {
+    if (!studentId || !patch || typeof patch !== 'object') {
+      throw new Error('studentId and patch are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const nextPatch = {
+      ...patch,
+      lastActivity: 'Just now',
+    }
+
+    if (existingStudent) {
+      setStudents((current) => updateStudentWorkStateInCollection(current, studentId, nextPatch))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) {
+      return { ...(existingStudent || { id: studentId }), ...nextPatch }
+    }
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/next-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(nextPatch),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) {
+        return { ...(existingStudent || { id: studentId }), ...nextPatch }
+      }
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const updatedStudent = {
+        ...(normalizeStudentDetailPayload(payload) || existingStudent || { id: studentId }),
+        ...nextPatch,
+      }
+
+      setStudents((current) => current.some((student) => student.id === studentId)
+        ? current.map((student) => student.id === studentId ? { ...student, ...updatedStudent } : student)
+        : current)
+
+      return updatedStudent
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const addStudentInteraction = useCallback(async ({ studentId, interaction }) => {
+    if (!studentId || !interaction || typeof interaction !== 'object') {
+      throw new Error('studentId and interaction are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const occurredAt = interaction.occurredAt || new Date().toISOString()
+    const optimisticInteraction = {
+      id: interaction.id || `interaction-${Date.now()}`,
+      ...interaction,
+      occurredAt,
+    }
+
+    if (existingStudent) {
+      setStudents((current) => addStudentInteractionInCollection(current, studentId, optimisticInteraction))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) return optimisticInteraction
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/interactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(optimisticInteraction),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) return optimisticInteraction
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const savedInteraction = payload?.interaction || payload
+      const normalizedInteraction = {
+        ...optimisticInteraction,
+        ...(savedInteraction && typeof savedInteraction === 'object' ? savedInteraction : {}),
+      }
+
+      setStudents((current) => current.map((student) => {
+        if (student.id !== studentId) return student
+        const interactions = Array.isArray(student.interactions) ? student.interactions : []
+        return {
+          ...student,
+          interactions: interactions.map((item) => item.id === optimisticInteraction.id ? normalizedInteraction : item),
+          lastContactedAt: normalizedInteraction.occurredAt || student.lastContactedAt,
+          contactOutcome: normalizedInteraction.outcome || student.contactOutcome,
+          nextFollowUpAt: normalizedInteraction.nextFollowUpAt || student.nextFollowUpAt,
+          nextAction: normalizedInteraction.nextAction || student.nextAction,
+        }
+      }))
+
+      return normalizedInteraction
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const logStudentCommunication = useCallback(async ({ studentId, communication }) => {
+    if (!studentId || !communication || typeof communication !== 'object') {
+      throw new Error('studentId and communication are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const occurredAt = communication.occurredAt || new Date().toISOString()
+    const channelLabel = String(communication.channel || 'communication').replace(/_/g, ' ')
+    const optimisticCommunication = {
+      id: communication.id || `communication-${Date.now()}`,
+      type: 'communication',
+      title: communication.title || `${channelLabel} outreach`,
+      outcome: communication.status || 'logged',
+      description: communication.message || communication.note || '',
+      note: communication.message || communication.note || '',
+      ...communication,
+      occurredAt,
+      source: communication.source || 'student_360_outreach',
+    }
+
+    if (existingStudent) {
+      setStudents((current) => addStudentInteractionInCollection(current, studentId, optimisticCommunication))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) return optimisticCommunication
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/communications/log`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(optimisticCommunication),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) return optimisticCommunication
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const savedCommunication = payload?.communication || payload
+      const normalizedCommunication = {
+        ...optimisticCommunication,
+        ...(savedCommunication && typeof savedCommunication === 'object' ? savedCommunication : {}),
+      }
+
+      setStudents((current) => current.map((student) => {
+        if (student.id !== studentId) return student
+        const interactions = Array.isArray(student.interactions) ? student.interactions : []
+        return {
+          ...student,
+          interactions: interactions.map((item) => item.id === optimisticCommunication.id ? normalizedCommunication : item),
+          lastContactedAt: normalizedCommunication.occurredAt || student.lastContactedAt,
+          contactOutcome: normalizedCommunication.outcome || student.contactOutcome,
+          nextFollowUpAt: normalizedCommunication.nextFollowUpAt || student.nextFollowUpAt,
+          nextAction: normalizedCommunication.nextAction || student.nextAction,
+        }
+      }))
+
+      return normalizedCommunication
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const createStudentHandoff = useCallback(async ({ studentId, handoff }) => {
+    if (!studentId || !handoff || typeof handoff !== 'object') {
+      throw new Error('studentId and handoff are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const optimisticHandoff = {
+      id: handoff.id || `handoff-${Date.now()}`,
+      status: handoff.status || 'open',
+      createdAt: handoff.createdAt || new Date().toISOString(),
+      ...handoff,
+    }
+
+    if (existingStudent) {
+      setStudents((current) => addStudentHandoffInCollection(current, studentId, optimisticHandoff))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) return optimisticHandoff
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/handoffs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(optimisticHandoff),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) return optimisticHandoff
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const savedHandoff = payload?.handoff || payload
+      const normalizedHandoff = {
+        ...optimisticHandoff,
+        ...(savedHandoff && typeof savedHandoff === 'object' ? savedHandoff : {}),
+      }
+
+      setStudents((current) => current.map((student) => {
+        if (student.id !== studentId) return student
+        const handoffs = Array.isArray(student.handoffs) ? student.handoffs : []
+        return {
+          ...student,
+          handoffs: handoffs.map((item) => item.id === optimisticHandoff.id ? normalizedHandoff : item),
+        }
+      }))
+
+      return normalizedHandoff
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const updateStudentMilestone = useCallback(async ({ studentId, milestoneId, milestone }) => {
+    if (!studentId || !milestoneId || !milestone || typeof milestone !== 'object') {
+      throw new Error('studentId, milestoneId, and milestone are required.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const optimisticMilestone = {
+      id: milestoneId,
+      updatedAt: new Date().toISOString(),
+      ...milestone,
+    }
+
+    if (existingStudent) {
+      setStudents((current) => updateStudentMilestoneInCollection(current, studentId, optimisticMilestone))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) return optimisticMilestone
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/milestones/${encodeURIComponent(milestoneId)}/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(optimisticMilestone),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) return optimisticMilestone
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const savedMilestone = payload?.milestone || payload
+      const normalizedMilestone = {
+        ...optimisticMilestone,
+        ...(savedMilestone && typeof savedMilestone === 'object' ? savedMilestone : {}),
+      }
+
+      setStudents((current) => updateStudentMilestoneInCollection(current, studentId, normalizedMilestone))
+      return normalizedMilestone
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => student.id === studentId ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
+  const logRecruitmentEvent = useCallback(async ({ studentId, event }) => {
+    if (!studentId || !event || typeof event !== 'object') {
+      throw new Error('studentId and event are required.')
+    }
+
+    const interaction = {
+      id: event.id || `recruitment-${Date.now()}`,
+      type: 'recruitment_event',
+      title: event.eventName || event.eventType || 'Recruitment event',
+      description: event.notes || event.eventType || '',
+      note: event.notes || '',
+      outcome: event.outcome || 'attended',
+      occurredAt: event.occurredAt || new Date().toISOString(),
+      actor: event.actor || 'Admissions',
+      source: event.source || 'recruitment',
+      ...event,
+    }
+
+    return addStudentInteraction({ studentId, interaction })
+  }, [addStudentInteraction])
+
   const value = useMemo(() => ({
     students,
     isLoadingStudents,
@@ -762,8 +1206,15 @@ export function StudentRecordsProvider({ children }) {
     normalizeStudentDetailPayload,
     loadStudentChecklist,
     updateChecklistItemStatus,
+    updateStudentProgram,
+    updateStudentWorkState,
+    addStudentInteraction,
+    logStudentCommunication,
+    createStudentHandoff,
+    updateStudentMilestone,
+    logRecruitmentEvent,
     uploadTranscript,
-  }), [isLoadingStudents, loadStudentChecklist, loadStudents, students, studentsError, updateChecklistItemStatus, uploadTranscript])
+  }), [addStudentInteraction, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

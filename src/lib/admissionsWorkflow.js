@@ -1,29 +1,72 @@
 export const LIFECYCLE_STAGES = {
   inquiry: 'Inquiry',
-  qualifiedInquiry: 'Qualified inquiry',
-  applicationStarted: 'Application started',
-  applicationSubmitted: 'Application submitted',
-  incompleteApplicant: 'Incomplete applicant',
-  completeReadyForReview: 'Complete / ready for review',
-  inReview: 'In review',
-  decisionPending: 'Decision pending',
+  prospect: 'Prospect',
+  qualifiedInquiry: 'Prospect',
+  applicationStarted: 'Applicant',
+  applicationSubmitted: 'Applicant',
+  applicant: 'Applicant',
+  incompleteApplicant: 'Incomplete',
+  completeReadyForReview: 'Complete',
+  complete: 'Complete',
+  inReview: 'Complete',
+  decisionPending: 'Complete',
   admitted: 'Admitted',
   denied: 'Denied',
   waitlisted: 'Waitlisted',
   deferred: 'Deferred',
-  deposited: 'Deposited',
+  deposited: 'Deposited/Committed',
+  committed: 'Deposited/Committed',
   handoffInProgress: 'Handoff in progress',
-  classReady: 'Class-ready',
-  enrolledInClasses: 'Enrolled / in classes',
+  classReady: 'Registered',
+  enrolledInClasses: 'Registered',
+  registered: 'Registered',
   meltRisk: 'Melt risk',
   withdrawnInactive: 'Withdrawn / inactive',
 }
 
+export const PIPELINE_STATUSES = {
+  inquiry: 'Inquiry',
+  prospect: 'Prospect',
+  applicant: 'Applicant',
+  incomplete: 'Incomplete',
+  complete: 'Complete',
+  admitted: 'Admitted',
+  depositedCommitted: 'Deposited/Committed',
+  registered: 'Registered',
+}
+
+export const PIPELINE_STATUS_MEANINGS = [
+  { status: PIPELINE_STATUSES.inquiry, meaning: 'Student showed interest' },
+  { status: PIPELINE_STATUSES.prospect, meaning: 'Student may be a fit' },
+  { status: PIPELINE_STATUSES.applicant, meaning: 'Application started or submitted' },
+  { status: PIPELINE_STATUSES.incomplete, meaning: 'Missing transcript, essay, fee, etc.' },
+  { status: PIPELINE_STATUSES.complete, meaning: 'Ready for review' },
+  { status: PIPELINE_STATUSES.admitted, meaning: 'Accepted' },
+  { status: PIPELINE_STATUSES.depositedCommitted, meaning: 'Student intends to enroll' },
+  { status: PIPELINE_STATUSES.registered, meaning: 'Student is actually enrolled' },
+]
+
+export function normalizePipelineStatus(value, fallback = PIPELINE_STATUSES.prospect) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ')
+  if (!normalized) return fallback
+
+  if (normalized === 'inquiry' || normalized.includes('new inquiry')) return PIPELINE_STATUSES.inquiry
+  if (normalized.includes('prospect') || normalized.includes('qualified inquiry') || normalized.includes('high intent')) return PIPELINE_STATUSES.prospect
+  if (normalized.includes('applicant') || normalized.includes('application started') || normalized.includes('application submitted') || normalized === 'submitted') return PIPELINE_STATUSES.applicant
+  if (normalized.includes('incomplete') || normalized.includes('pending evidence') || normalized.includes('needs evidence') || normalized.includes('missing') || normalized.includes('nearly complete') || normalized.includes('trust hold')) return PIPELINE_STATUSES.incomplete
+  if (normalized.includes('complete') || normalized.includes('ready for review') || normalized.includes('decision ready') || normalized.includes('decision-ready') || normalized.includes('in review') || normalized.includes('decision pending')) return PIPELINE_STATUSES.complete
+  if (normalized.includes('admitted') || normalized.includes('accepted')) return PIPELINE_STATUSES.admitted
+  if (normalized.includes('deposit') || normalized.includes('committed')) return PIPELINE_STATUSES.depositedCommitted
+  if (normalized.includes('registered') || normalized.includes('enrolled') || normalized.includes('class ready') || normalized.includes('class-ready')) return PIPELINE_STATUSES.registered
+
+  return fallback
+}
+
 export const LEGACY_STAGE_LABELS = {
-  decisionReady: 'Decision-ready',
-  pendingEvidence: 'Pending evidence',
-  trustHold: 'Trust hold',
-  nearlyComplete: 'Nearly complete',
+  decisionReady: PIPELINE_STATUSES.complete,
+  pendingEvidence: PIPELINE_STATUSES.incomplete,
+  trustHold: PIPELINE_STATUSES.incomplete,
+  nearlyComplete: PIPELINE_STATUSES.incomplete,
 }
 
 export const CHECKLIST_STATUSES = {

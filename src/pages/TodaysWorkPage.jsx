@@ -7,6 +7,7 @@ import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { buildWorkItemsFromStudents, buildWorkSummary, sortWorkItems } from '../lib/studentWorkflow'
+import { PIPELINE_STATUSES, PIPELINE_STATUS_MEANINGS } from '../lib/admissionsWorkflow'
 import {
   getWorkTodayLatestOrchestrationUrl,
   getWorkTodayRecommendationUrl,
@@ -17,6 +18,7 @@ import {
   normalizeWorkItems,
   normalizeWorkSummary,
   workTodayBoardUrl,
+  legacyWorkTodayUrl,
   workItemsUrl,
   workSummaryUrl,
   workTodayOrchestrateUrl,
@@ -107,9 +109,89 @@ function buildBlockerMix(items) {
     .slice(0, 5)
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Not set'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function getItemPipelineStatus(item) {
+  return item.pipelineStatus || PIPELINE_STATUSES.incomplete
+}
+
+function buildCounselorBuckets(items) {
+  const now = Date.now()
+  const overdueFollowUp = items.filter((item) => {
+    const due = new Date(item.nextFollowUpAt || '').getTime()
+    return Number.isFinite(due) && due <= now
+  })
+  const byStatus = Object.values(PIPELINE_STATUSES).map((status) => ({
+    key: status,
+    label: status,
+    meaning: PIPELINE_STATUS_MEANINGS.find((item) => item.status === status)?.meaning || '',
+    items: items.filter((item) => getItemPipelineStatus(item) === status),
+  }))
+
+  return [
+    {
+      key: 'overdue',
+      label: 'Due follow-up',
+      meaning: 'Students with follow-up due now or earlier.',
+      items: overdueFollowUp,
+    },
+    ...byStatus,
+  ]
+}
+
+function buildHandoffQueueFromStudents(students) {
+  return (Array.isArray(students) ? students : []).flatMap((student) => (
+    Array.isArray(student.handoffs) ? student.handoffs.map((handoff) => ({
+      ...handoff,
+      studentId: student.id,
+      studentName: student.name,
+      program: student.program || student.degreeProgram || '',
+    })) : []
+  )).filter((handoff) => String(handoff.status || '').toLowerCase() !== 'complete')
+}
+
+function buildPostAdmitBlockersFromStudents(students) {
+  return (Array.isArray(students) ? students : []).flatMap((student) => (
+    Array.isArray(student.postAdmitMilestones) ? student.postAdmitMilestones.map((milestone) => ({
+      ...milestone,
+      studentId: student.id,
+      studentName: student.name,
+      program: student.program || student.degreeProgram || '',
+    })) : []
+  )).filter((milestone) => String(milestone.status || '').toLowerCase() === 'blocked')
+}
+
+function buildRecruitmentFollowUpsFromStudents(students) {
+  return (Array.isArray(students) ? students : []).flatMap((student) => (
+    Array.isArray(student.interactions) ? student.interactions.filter((item) => item.type === 'recruitment_event').map((event) => ({
+      ...event,
+      studentId: student.id,
+      studentName: student.name,
+      program: student.program || student.degreeProgram || '',
+    })) : []
+  ))
+}
+
+const counselorActionTypes = [
+  { value: 'contacted', label: 'Log contact' },
+  { value: 'follow_up', label: 'Set follow-up' },
+  { value: 'request_document', label: 'Request missing document' },
+  { value: 'route_handoff', label: 'Route / handoff note' },
+]
+
 export default function TodaysWorkPage() {
   const { session, fetchWithTenantAuth } = useAuth()
-  const { students, isLoadingStudents, studentsError, loadStudents, updateChecklistItemStatus } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudents, updateChecklistItemStatus, updateStudentWorkState } = useStudentRecords()
   const [state, setState] = useState(initialState)
   const [activeWorkTab, setActiveWorkTab] = useState('attention')
   const [attentionQuery, setAttentionQuery] = useState('')
@@ -123,6 +205,13 @@ export default function TodaysWorkPage() {
   const [isOrchestrating, setIsOrchestrating] = useState(false)
   const [isLoadingLatestOrchestration, setIsLoadingLatestOrchestration] = useState(false)
   const [orchestrationRun, setOrchestrationRun] = useState(null)
+  const [activeCounselorBucket, setActiveCounselorBucket] = useState('overdue')
+  const [counselorActionItem, setCounselorActionItem] = useState(null)
+  const [counselorActionType, setCounselorActionType] = useState('contacted')
+  const [counselorActionNote, setCounselorActionNote] = useState('')
+  const [counselorNextAction, setCounselorNextAction] = useState('')
+  const [counselorFollowUpAt, setCounselorFollowUpAt] = useState('')
+  const [isSavingCounselorAction, setIsSavingCounselorAction] = useState(false)
 
   const derivedItems = useMemo(() => sortWorkItems(buildWorkItemsFromStudents(students)), [students])
   const derivedSummary = useMemo(() => buildWorkSummary(derivedItems), [derivedItems])
@@ -154,8 +243,13 @@ export default function TodaysWorkPage() {
       let items = []
       let summary = null
 
-      const todayResponse = await fetchWithTenantAuth(`${workTodayUrl}?limit=100`)
-      const todayPayload = await todayResponse.json().catch(() => ({}))
+      let todayResponse = await fetchWithTenantAuth(`${workTodayUrl}?limit=100`)
+      let todayPayload = await todayResponse.json().catch(() => ({}))
+
+      if (todayResponse.status === 404 || todayResponse.status === 405) {
+        todayResponse = await fetchWithTenantAuth(`${legacyWorkTodayUrl}?limit=100`)
+        todayPayload = await todayResponse.json().catch(() => ({}))
+      }
 
       if (todayResponse.ok) {
         items = sortWorkItems(normalizeTodayWorkItems(todayPayload))
@@ -269,6 +363,11 @@ export default function TodaysWorkPage() {
   const workflowFunnel = useMemo(() => buildWorkflowFunnel(activeItems, activeSummary), [activeItems, activeSummary])
   const priorityMix = useMemo(() => buildPriorityMix(activeItems), [activeItems])
   const blockerMix = useMemo(() => buildBlockerMix(activeItems), [activeItems])
+  const counselorBuckets = useMemo(() => buildCounselorBuckets(activeItems), [activeItems])
+  const activeCounselorBucketModel = counselorBuckets.find((bucket) => bucket.key === activeCounselorBucket) || counselorBuckets[0]
+  const handoffQueue = useMemo(() => buildHandoffQueueFromStudents(students), [students])
+  const postAdmitBlockers = useMemo(() => buildPostAdmitBlockersFromStudents(students), [students])
+  const recruitmentFollowUps = useMemo(() => buildRecruitmentFollowUpsFromStudents(students), [students])
   const fallbackTabs = useMemo(() => ([
     {
       key: 'attention',
@@ -303,6 +402,60 @@ export default function TodaysWorkPage() {
       setActiveWorkTab(workTabs[0].key)
     }
   }, [activeWorkTab, workTabs])
+
+  useEffect(() => {
+    if (counselorBuckets.length && !counselorBuckets.some((bucket) => bucket.key === activeCounselorBucket)) {
+      setActiveCounselorBucket(counselorBuckets[0].key)
+    }
+  }, [activeCounselorBucket, counselorBuckets])
+
+  function openCounselorAction(item, actionType = 'contacted') {
+    setCounselorActionItem(item)
+    setCounselorActionType(actionType)
+    setCounselorActionNote('')
+    setCounselorNextAction(item.nextAction || item.suggestedAction?.label || '')
+    setCounselorFollowUpAt('')
+    setActionError('')
+    setActionDetail('')
+  }
+
+  function closeCounselorAction() {
+    setCounselorActionItem(null)
+    setCounselorActionType('contacted')
+    setCounselorActionNote('')
+    setCounselorNextAction('')
+    setCounselorFollowUpAt('')
+  }
+
+  async function handleSaveCounselorAction(event) {
+    event.preventDefault()
+    if (!counselorActionItem?.studentId) return
+
+    setIsSavingCounselorAction(true)
+    setActionError('')
+    setActionDetail('')
+
+    try {
+      const nowIso = new Date().toISOString()
+      const patch = {
+        actionType: counselorActionType,
+        note: counselorActionNote.trim(),
+        nextAction: counselorNextAction.trim() || counselorActionItem.suggestedAction?.label || 'Follow up',
+        contactOutcome: counselorActionType,
+        lastContactedAt: counselorActionType === 'contacted' ? nowIso : counselorActionItem.lastContactedAt || '',
+        nextFollowUpAt: counselorFollowUpAt ? new Date(counselorFollowUpAt).toISOString() : counselorActionItem.nextFollowUpAt || '',
+      }
+
+      await updateStudentWorkState({ studentId: counselorActionItem.studentId, patch })
+      await loadWork()
+      setActionDetail(`${counselorActionItem.studentName} updated.`)
+      closeCounselorAction()
+    } catch (error) {
+      setActionError(error.message || 'Unable to save counselor action.')
+    } finally {
+      setIsSavingCounselorAction(false)
+    }
+  }
 
   async function handleResolveBlocker(item) {
     const primaryBlocker = item.blockingItems?.[0]
@@ -622,6 +775,117 @@ export default function TodaysWorkPage() {
             </section>
           ) : null}
 
+          <section className="panel counselor-workbench-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Counselor workbench</h3>
+                <p>Pipeline-focused follow-up buckets for the counselor day: first touch, missing items, review readiness, admit yield, and registration movement.</p>
+              </div>
+            </div>
+
+            <div className="counselor-bucket-grid">
+              {counselorBuckets.map((bucket) => (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  className={`counselor-bucket-card ${activeCounselorBucket === bucket.key ? 'active' : ''}`}
+                  onClick={() => setActiveCounselorBucket(bucket.key)}
+                >
+                  <span>{bucket.label}</span>
+                  <strong>{bucket.items.length}</strong>
+                  <small>{bucket.meaning}</small>
+                </button>
+              ))}
+            </div>
+
+            <div className="panel-header counselor-bucket-header">
+              <div>
+                <h3>{activeCounselorBucketModel?.label}</h3>
+                <p>{activeCounselorBucketModel?.meaning}</p>
+              </div>
+            </div>
+
+            <div className="counselor-followup-list">
+              {activeCounselorBucketModel?.items.length ? activeCounselorBucketModel.items.slice(0, 6).map((item) => (
+                <article key={`${activeCounselorBucketModel.key}-${item.id}`} className="counselor-followup-row">
+                  <div>
+                    <h4>{item.studentName}</h4>
+                    <p>{item.program || 'Program pending'} - {item.reasonToAct?.label || item.suggestedAction?.label || 'Follow up'}</p>
+                  </div>
+                  <div className="counselor-followup-meta">
+                    <span>Next follow-up: {formatDateTime(item.nextFollowUpAt)}</span>
+                    <span>Last contact: {formatDateTime(item.lastContactedAt)}</span>
+                  </div>
+                  <div className="pill-row compact">
+                    <button type="button" className="secondary-button" onClick={() => openCounselorAction(item, 'contacted')}>Log contact</button>
+                    <button type="button" className="secondary-button" onClick={() => openCounselorAction(item, 'follow_up')}>Set follow-up</button>
+                  </div>
+                </article>
+              )) : (
+                <p className="muted-copy">No students are currently in this counselor bucket.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="dashboard-grid three-up work-queue-grid">
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Handoff queue</h3>
+                  <p>Open cross-office ownership for admissions operations, aid, registrar, advising, housing, and accounts.</p>
+                </div>
+                <span className="badge neutral-badge">{handoffQueue.length}</span>
+              </div>
+              <div className="stack-list compact-stack-list">
+                {handoffQueue.slice(0, 5).map((handoff) => (
+                  <div key={handoff.id} className="stack-row">
+                    <strong>{handoff.studentName}</strong>
+                    <span>{handoff.targetTeam || 'Handoff'} - {handoff.owner || 'Unassigned'} - {handoff.dueAt ? formatDateTime(handoff.dueAt) : 'No due date'}</span>
+                  </div>
+                ))}
+                {!handoffQueue.length ? <div className="stack-row"><strong>No active handoffs</strong><span>Open handoffs will appear here.</span></div> : null}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Post-admit blockers</h3>
+                  <p>Blocked financial aid, orientation, advising, registration, housing, or account milestones.</p>
+                </div>
+                <span className="badge neutral-badge">{postAdmitBlockers.length}</span>
+              </div>
+              <div className="stack-list compact-stack-list">
+                {postAdmitBlockers.slice(0, 5).map((milestone) => (
+                  <div key={`${milestone.studentId}-${milestone.id}`} className="stack-row">
+                    <strong>{milestone.studentName}</strong>
+                    <span>{milestone.label || milestone.id} - {milestone.owner || 'Unassigned'}</span>
+                  </div>
+                ))}
+                {!postAdmitBlockers.length ? <div className="stack-row"><strong>No blocked milestones</strong><span>Blocked post-admit steps will appear here.</span></div> : null}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h3>Recruitment follow-up</h3>
+                  <p>Recent event and territory attribution tied to student follow-up.</p>
+                </div>
+                <span className="badge neutral-badge">{recruitmentFollowUps.length}</span>
+              </div>
+              <div className="stack-list compact-stack-list">
+                {recruitmentFollowUps.slice(0, 5).map((event) => (
+                  <div key={event.id} className="stack-row">
+                    <strong>{event.studentName}</strong>
+                    <span>{event.eventType || event.title} - {event.territory || 'No territory'} - {formatDateTime(event.occurredAt)}</span>
+                  </div>
+                ))}
+                {!recruitmentFollowUps.length ? <div className="stack-row"><strong>No recruitment activity</strong><span>Logged events and source attribution will appear here.</span></div> : null}
+              </div>
+            </article>
+          </section>
+
           <div className="work-tabs-stack">
             <div className="tab-switcher">
               {workTabs.map((tab) => (
@@ -695,6 +959,7 @@ export default function TodaysWorkPage() {
                 key={item.id}
                 item={item}
                 onResolvePrimaryAction={handleResolveBlocker}
+                onOpenCounselorAction={openCounselorAction}
                 isResolving={activeActionId === item.id}
                 onRouteWorkItem={state.source === 'live' ? handleRouteWorkItem : undefined}
                 onRecommendRoute={state.source === 'live' ? handleRecommendRoute : undefined}
@@ -710,6 +975,53 @@ export default function TodaysWorkPage() {
           </div>
         </>
       )}
+
+      {counselorActionItem ? (
+        <div className="modal-scrim" onClick={closeCounselorAction} role="presentation">
+          <div className="modal-panel counselor-action-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>{counselorActionItem.studentName}</h3>
+                <p>{counselorActionItem.program || 'Program pending'} - {counselorActionItem.reasonToAct?.label || 'Counselor action'}</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeCounselorAction} aria-label="Close counselor action">x</button>
+            </div>
+
+            <form className="auth-form password-form" onSubmit={handleSaveCounselorAction}>
+              <label className="auth-field">
+                <span>Action</span>
+                <select value={counselorActionType} onChange={(event) => setCounselorActionType(event.target.value)}>
+                  {counselorActionTypes.map((action) => (
+                    <option key={action.value} value={action.value}>{action.label}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="auth-field">
+                <span>Next action</span>
+                <input value={counselorNextAction} onChange={(event) => setCounselorNextAction(event.target.value)} placeholder="Follow up on missing transcript" />
+              </label>
+
+              <label className="auth-field">
+                <span>Next follow-up</span>
+                <input type="datetime-local" value={counselorFollowUpAt} onChange={(event) => setCounselorFollowUpAt(event.target.value)} />
+              </label>
+
+              <label className="auth-field">
+                <span>Note</span>
+                <textarea value={counselorActionNote} onChange={(event) => setCounselorActionNote(event.target.value)} placeholder="Student asked about transcript status, aid, deposit, or registration next steps." />
+              </label>
+
+              <div className="password-actions">
+                <button type="button" className="secondary-button" onClick={closeCounselorAction}>Cancel</button>
+                <button type="submit" className="primary-button" disabled={isSavingCounselorAction}>
+                  {isSavingCounselorAction ? 'Saving...' : 'Save action'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

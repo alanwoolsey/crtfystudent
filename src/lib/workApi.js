@@ -1,8 +1,11 @@
+import { normalizePipelineStatus } from './admissionsWorkflow'
+
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
 export const workSummaryUrl = `${apiBaseUrl}/api/v1/work/summary`
 export const workItemsUrl = `${apiBaseUrl}/api/v1/work/items`
-export const workTodayUrl = `${apiBaseUrl}/api/v1/work/today`
+export const workTodayUrl = `${apiBaseUrl}/api/v1/work/counselor/today`
+export const legacyWorkTodayUrl = `${apiBaseUrl}/api/v1/work/today`
 export const workTodayBoardUrl = `${workTodayUrl}/board`
 export const workTodayOrchestrateUrl = `${workTodayUrl}/orchestrate`
 export const workTodayLatestOrchestrationUrl = `${workTodayUrl}/orchestrations/latest`
@@ -43,6 +46,11 @@ export function normalizeWorkItems(payload) {
 
   return items.map((item) => ({
     ...item,
+    pipelineStatus: item?.pipelineStatus || item?.pipeline_status || normalizePipelineStatus(item?.stage || item?.currentStage),
+    lastContactedAt: item?.lastContactedAt || item?.last_contacted_at || '',
+    nextFollowUpAt: item?.nextFollowUpAt || item?.next_follow_up_at || '',
+    nextAction: item?.nextAction || item?.next_action || item?.suggestedAction?.label || '',
+    contactOutcome: item?.contactOutcome || item?.contact_outcome || '',
     population: typeof item?.population === 'object'
       ? item.population?.name || item.population?.label || 'general'
       : item?.population,
@@ -60,6 +68,11 @@ export function normalizeTodayWorkItems(payload) {
 
   return items.map((item) => ({
     ...item,
+    pipelineStatus: item?.pipelineStatus || item?.pipeline_status || normalizePipelineStatus(item?.stage || item?.currentStage),
+    lastContactedAt: item?.lastContactedAt || item?.last_contacted_at || '',
+    nextFollowUpAt: item?.nextFollowUpAt || item?.next_follow_up_at || '',
+    nextAction: item?.nextAction || item?.next_action || item?.suggestedAction?.label || '',
+    contactOutcome: item?.contactOutcome || item?.contact_outcome || '',
     owner: item?.owner || { id: 'unassigned', name: 'Unassigned' },
     readiness: item?.readiness || { state: item?.section || 'in_progress', label: item?.reasonToAct?.label || 'In progress', tone: 'neutral' },
     checklistSummary: item?.checklistSummary || {

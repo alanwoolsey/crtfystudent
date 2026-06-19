@@ -118,7 +118,7 @@ export default function ConnectorsPage() {
           </div>
         </div>
         <div className="stack-list">
-          <div className="stack-row"><strong>Land first</strong><span>Prospect portal and transcript evaluation overlay.</span></div>
+          <div className="stack-row"><strong>Land first</strong><span>Portals and transcript evaluation overlay.</span></div>
           <div className="stack-row"><strong>Expand next</strong><span>Decision packets and trust signals into SIS/CRM workflows.</span></div>
           <div className="stack-row"><strong>Own later</strong><span>Conversion operating system and agent-led lifecycle orchestration.</span></div>
         </div>

@@ -3,14 +3,23 @@ import { useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
+import { prospectSubmissions } from '../data/prospectSubmissions'
+import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
+import { PIPELINE_STATUSES, PIPELINE_STATUS_MEANINGS } from '../lib/admissionsWorkflow'
 import useDebouncedValue from '../lib/useDebouncedValue'
 
 const studentsPerPage = 8
+const pipelineStatusMeanings = Object.fromEntries(PIPELINE_STATUS_MEANINGS.map((item) => [item.status, item.meaning]))
 const quickFilters = [
   { key: 'all', label: 'All students' },
-  { key: 'high-fit', label: 'High fit' },
-  { key: 'trust-hold', label: 'Trust hold' },
-  { key: 'need-evidence', label: 'Need evidence' },
+  { key: PIPELINE_STATUSES.inquiry, label: PIPELINE_STATUSES.inquiry },
+  { key: PIPELINE_STATUSES.prospect, label: PIPELINE_STATUSES.prospect },
+  { key: PIPELINE_STATUSES.applicant, label: PIPELINE_STATUSES.applicant },
+  { key: PIPELINE_STATUSES.incomplete, label: PIPELINE_STATUSES.incomplete },
+  { key: PIPELINE_STATUSES.complete, label: PIPELINE_STATUSES.complete },
+  { key: PIPELINE_STATUSES.admitted, label: PIPELINE_STATUSES.admitted },
+  { key: PIPELINE_STATUSES.depositedCommitted, label: PIPELINE_STATUSES.depositedCommitted },
+  { key: PIPELINE_STATUSES.registered, label: PIPELINE_STATUSES.registered },
 ]
 
 function getDisplayValue(value, fallback = '') {
@@ -48,22 +57,15 @@ export default function StudentsPage() {
     loadStudents(debouncedQuery.trim()).catch(() => {})
   }, [debouncedQuery, loadStudents])
 
+  const displayStudents = useMemo(() => {
+    return mergeProspectsIntoStudents(students, prospectSubmissions)
+  }, [students])
+
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
-    const quickFilteredStudents = students.filter((student) => {
-      const stage = String(student.stage || '').toLowerCase()
-      const risk = String(student.risk || '').toLowerCase()
-      const nextAction = String(student.nextBestAction || student.recommendation?.nextBestAction || '').toLowerCase()
-      const tags = Array.isArray(student.tags) ? student.tags.map((tag) => String(tag).toLowerCase()) : []
-      const fitScore = Number(student.fitScore) || 0
-
-      if (activeFilter === 'high-fit') return fitScore >= 85
-      if (activeFilter === 'trust-hold') {
-        return stage.includes('trust hold') || risk === 'high' || tags.includes('trust hold')
-      }
-      if (activeFilter === 'need-evidence') {
-        return stage.includes('pending evidence') || stage.includes('needs evidence') || nextAction.includes('request') || nextAction.includes('evidence')
-      }
+    const quickFilteredStudents = displayStudents.filter((student) => {
+      const stage = String(student.stage || '')
+      if (activeFilter !== 'all') return stage === activeFilter
       return true
     })
 
@@ -87,11 +89,11 @@ export default function StudentsPage() {
 
       return haystack.includes(search)
     })
-  }, [activeFilter, query, students])
+  }, [activeFilter, displayStudents, query])
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, query, students.length])
+  }, [activeFilter, query, displayStudents.length])
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / studentsPerPage))
   const currentPage = Math.min(page, totalPages)
@@ -125,6 +127,7 @@ export default function StudentsPage() {
               type="button"
               className={`tag ${activeFilter === filter.key ? 'active-tag' : ''}`}
               onClick={() => setActiveFilter(filter.key)}
+              title={pipelineStatusMeanings[filter.key] || ''}
             >
               {filter.label}
             </button>
@@ -138,7 +141,7 @@ export default function StudentsPage() {
         </section>
       ) : null}
 
-      {!isLoadingStudents && studentsError ? (
+      {!isLoadingStudents && studentsError && !displayStudents.length ? (
         <section className="panel">
           <p className="auth-error">{studentsError}</p>
           <button type="button" className="secondary-button" onClick={() => loadStudents()}>
@@ -147,7 +150,7 @@ export default function StudentsPage() {
         </section>
       ) : null}
 
-      {!isLoadingStudents && !studentsError ? (
+      {!isLoadingStudents && (!studentsError || displayStudents.length) ? (
         <>
           {filteredStudents.length ? (
             <>

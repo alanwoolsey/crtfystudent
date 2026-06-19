@@ -5,7 +5,7 @@
   ],
   "offerings": [
     { "name": "Command Center", "file": "/logos/crtfy-command-center.svg" },
-    { "name": "Prospect Portal", "file": "/logos/crtfy-prospect-portal.svg" },
+    { "name": "Portals", "file": "/logos/crtfy-prospect-portal.svg" },
     { "name": "Student 360", "file": "/logos/crtfy-student-360.svg" },
     { "name": "Decision Studio", "file": "/logos/crtfy-decision-studio.svg" },
     { "name": "Workflows", "file": "/logos/crtfy-workflows.svg" },

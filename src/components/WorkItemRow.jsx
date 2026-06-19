@@ -27,9 +27,22 @@ function getRouteButtonLabel(agentKey) {
   return 'Route'
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Not set'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export default function WorkItemRow({
   item,
   onResolvePrimaryAction,
+  onOpenCounselorAction,
   isResolving = false,
   onRouteWorkItem,
   onRecommendRoute,
@@ -86,6 +99,8 @@ export default function WorkItemRow({
       <div className="work-item-meta">
         <div><span>Owner</span><strong>{item.owner?.name || 'Unassigned'}</strong></div>
         <div><span>Next</span><strong>{item.suggestedAction?.label || 'Review student'}</strong></div>
+        <div><span>Follow-up</span><strong>{formatDateTime(item.nextFollowUpAt)}</strong></div>
+        <div><span>Last contact</span><strong>{formatDateTime(item.lastContactedAt)}</strong></div>
         <div><span>Last activity</span><strong>{item.lastActivity || 'Unknown'}</strong></div>
         {item.currentOwnerAgent ? <div><span>Owner agent</span><strong>{item.currentOwnerAgent}</strong></div> : null}
         {item.currentStage ? <div><span>Current stage</span><strong>{item.currentStage}</strong></div> : null}
@@ -177,6 +192,11 @@ export default function WorkItemRow({
             disabled={isResolving}
           >
             {isResolving ? 'Clearing...' : 'Clear top blocker'}
+          </button>
+        ) : null}
+        {typeof onOpenCounselorAction === 'function' ? (
+          <button type="button" className="secondary-button" onClick={() => onOpenCounselorAction(item)}>
+            Log / set follow-up
           </button>
         ) : null}
         {canOpenStudent ? <Link to={`/students/${item.studentId}`} className="secondary-button">Open student</Link> : null}

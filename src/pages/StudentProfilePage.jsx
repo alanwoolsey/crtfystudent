@@ -7,20 +7,151 @@ import TranscriptTimeline from '../components/TranscriptTimeline'
 import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { useAuth } from '../context/AuthContext'
+import { prospectSubmissions } from '../data/prospectSubmissions'
 import Can from '../components/Can'
 import ChecklistProgress from '../components/ChecklistProgress'
 import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
+import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
+const chatApiBaseUrl = (import.meta.env.VITE_CHAT_URL || '').replace(/\/+$/, '')
+const defaultProgramOptions = [
+  'BS Nursing Transfer',
+  'BS Computer Science',
+  'Business Administration',
+  'Psychology',
+  'General Studies',
+]
+const interactionTypes = [
+  { value: 'call', label: 'Call' },
+  { value: 'text', label: 'Text' },
+  { value: 'email', label: 'Email' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'family_conversation', label: 'Family conversation' },
+  { value: 'campus_visit', label: 'Campus visit' },
+  { value: 'webinar', label: 'Webinar / open house' },
+  { value: 'note', label: 'Note' },
+]
+const interactionOutcomes = [
+  { value: 'reached_student', label: 'Reached student' },
+  { value: 'left_message', label: 'Left message' },
+  { value: 'no_response', label: 'No response' },
+  { value: 'needs_follow_up', label: 'Needs follow-up' },
+  { value: 'not_interested', label: 'Not interested' },
+  { value: 'ready_to_apply', label: 'Ready to apply' },
+  { value: 'ready_to_deposit', label: 'Ready to deposit' },
+]
+const communicationChannels = [
+  { value: 'email', label: 'Email' },
+  { value: 'text', label: 'Text' },
+  { value: 'call', label: 'Call' },
+  { value: 'other', label: 'Other' },
+]
+const communicationTemplates = [
+  {
+    key: 'new_inquiry',
+    label: 'New inquiry',
+    subject: 'Your next step with {program}',
+    body: 'Hi {firstName},\n\nThanks for your interest in {program}. I reviewed your record and the next best step is {nextAction}.\n\nReply here and I can help you keep things moving.',
+  },
+  {
+    key: 'application_help',
+    label: 'Application help',
+    subject: 'Help finishing your application',
+    body: 'Hi {firstName},\n\nI saw your application is underway for {program}. If you want, I can help you finish the next item: {nextAction}.\n\nThe sooner we get that in, the sooner your file can move to review.',
+  },
+  {
+    key: 'missing_transcript',
+    label: 'Missing transcript',
+    subject: 'Transcript needed for your application',
+    body: 'Hi {firstName},\n\nWe still need your transcript before your {program} application can be completed. Please send the transcript when you can, or reply if you need help with the request.',
+  },
+  {
+    key: 'missing_requirement',
+    label: 'Missing requirement',
+    subject: 'One item needed for your application',
+    body: 'Hi {firstName},\n\nYour application is close, but one item still needs attention: {nextAction}. Once that is resolved, your file can continue through review for {program}.',
+  },
+  {
+    key: 'admission_offer',
+    label: 'Admission offer',
+    subject: 'Congratulations on your admission',
+    body: 'Hi {firstName},\n\nCongratulations on your admission to {program}. Your next step is {nextAction}. I can answer questions about transfer credit, advising, or getting started.',
+  },
+  {
+    key: 'deposit_reminder',
+    label: 'Deposit reminder',
+    subject: 'Confirming your spot',
+    body: 'Hi {firstName},\n\nYour next step is to confirm your spot for {program}. If you are still deciding, reply with what you are weighing and I can help.',
+  },
+  {
+    key: 'registration_orientation',
+    label: 'Registration / orientation',
+    subject: 'Registration and orientation next steps',
+    body: 'Hi {firstName},\n\nLet us make sure you are ready for registration and orientation. Your next step is {nextAction}. Reply here if you need help getting connected.',
+  },
+]
+const handoffTargets = [
+  'Admissions Operations',
+  'Application Reviewer',
+  'Financial Aid',
+  'Academic Department',
+  'Registrar / Transfer Specialist',
+  'Advising / Student Success',
+  'Housing / Orientation',
+  'Bursar / Student Accounts',
+]
+const handoffPriorities = ['Normal', 'High', 'Urgent']
+const handoffStatuses = ['Open', 'In progress', 'Blocked', 'Complete']
+const postAdmitMilestones = [
+  { id: 'financial_aid_package', label: 'Financial aid package', owner: 'Financial Aid' },
+  { id: 'scholarship_status', label: 'Scholarship status', owner: 'Financial Aid' },
+  { id: 'deposit_commitment', label: 'Deposit / commitment', owner: 'Admissions' },
+  { id: 'housing_application', label: 'Housing application', owner: 'Housing' },
+  { id: 'orientation', label: 'Orientation', owner: 'Orientation' },
+  { id: 'advising_appointment', label: 'Advising appointment', owner: 'Advising' },
+  { id: 'registration_status', label: 'Registration status', owner: 'Registrar' },
+  { id: 'bursar_account', label: 'Bursar / student account', owner: 'Student Accounts' },
+  { id: 'international_docs', label: 'International documentation', owner: 'International Student Services' },
+  { id: 'veteran_benefits', label: 'Veteran / military benefits', owner: 'Veteran Services' },
+  { id: 'accessibility_handoff', label: 'Accessibility / accommodation handoff', owner: 'Accessibility Services' },
+]
+const milestoneStatuses = ['Not started', 'In progress', 'Blocked', 'Complete', 'Waived']
+const territoryOptions = ['North', 'South', 'East', 'West', 'Transfer Partners', 'Online', 'International']
+const recruitmentEventTypes = ['College fair', 'High school visit', 'Transfer partner visit', 'Open house', 'Webinar', 'Campus visit', 'Counselor travel']
+
+async function parseApiPayload(response) {
+  const text = await response.text()
+  if (!text) return {}
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { response: text }
+  }
+}
 
 function getProgramName(student) {
   if (!student) return ''
   if (typeof student.program === 'string') return student.program
   return student.program?.name || ''
+}
+
+function getProgramDisplay(student) {
+  if (!student) return 'Program pending'
+  return getFirstValue(
+    getProgramName(student),
+    student.degreeProgram,
+    student.degree_program,
+    student.degree,
+    student.programInterest,
+    student.program_interest,
+    'Program pending',
+  )
 }
 
 function getNextBestAction(student) {
@@ -46,6 +177,11 @@ function formatCredits(value) {
   const number = Number(value)
   if (Number.isNaN(number)) return '-'
   return Number.isInteger(number) ? String(number) : number.toFixed(1)
+}
+
+function getCreditNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
 }
 
 function getStudentOverallGpa(student) {
@@ -105,6 +241,253 @@ function getCourseCredits(course) {
 
 function getCourseConfidence(course) {
   return getCourseValue(course, ['confidenceScore', 'confidence'], '')
+}
+
+function isCollegeTranscript(transcript) {
+  const typeText = [
+    transcript?.type,
+    transcript?.documentType,
+    transcript?.document_type,
+    transcript?.source,
+    transcript?.institution,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (!typeText) return false
+  if (/\b(high school|secondary|ged|hs)\b/.test(typeText)) return false
+  return /\b(college|university|transfer|undergraduate|postsecondary|post-secondary|technical|community college)\b/.test(typeText)
+}
+
+function buildTranscriptCourseRows(student) {
+  return (student?.transcripts || []).filter(isCollegeTranscript).flatMap((transcript) => (
+    (transcript.courses || []).map((course, index) => ({
+      id: `${transcript.id || 'transcript'}-${getCourseId(course) || getCourseTitle(course) || index}`,
+      transcriptId: transcript.id || '',
+      institution: transcript.institution || transcript.source || 'Transcript',
+      sourceCourse: getCourseId(course) || getCourseValue(course, ['course'], ''),
+      sourceTitle: getCourseTitle(course) || getCourseValue(course, ['source'], ''),
+      credits: getCourseCredits(course),
+      grade: course.grade || '',
+      term: getCourseValue(course, ['term'], ''),
+      year: getCourseValue(course, ['year'], ''),
+      mappedTo: course.mappedTo || course.mapped_to || '',
+      countsAs: course.countsAs || course.counts_as || '',
+    }))
+  ))
+}
+
+function parseEquivalencyJson(value) {
+  if (!value) return null
+  if (typeof value === 'object') return value
+
+  const text = String(value).trim()
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fenced?.[1]?.trim() || text
+
+  try {
+    return JSON.parse(candidate)
+  } catch {
+    const start = candidate.indexOf('{')
+    const end = candidate.lastIndexOf('}')
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(candidate.slice(start, end + 1))
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
+}
+
+function responseMentionsCourse(course, responseText) {
+  const response = String(responseText || '').toLowerCase()
+  const code = String(course.sourceCourse || '').toLowerCase()
+  const title = String(course.sourceTitle || '').toLowerCase()
+
+  return Boolean(
+    (code && response.includes(code))
+    || (title && title.length > 5 && response.includes(title)),
+  )
+}
+
+function inferNarrativeCatalogMapping(course, responseText) {
+  const courseText = `${course.sourceCourse || ''} ${course.sourceTitle || ''}`.toLowerCase()
+  const response = String(responseText || '').toLowerCase()
+  const isDirectlyMentioned = responseMentionsCourse(course, responseText)
+
+  if (/\b(chem|chemistry|organic chemistry|ochem)\b/.test(courseText)) {
+    const isOrganic = /\b(organic|ochem|chem\s*221)\b/.test(courseText)
+    return {
+      catalogCourse: isOrganic ? 'Organic Chemistry I' : 'Chemistry requirement',
+      requirement: response.includes('biology') || response.includes('biochemistry') ? 'Biology chemistry requirement' : 'Science requirement',
+      confidence: isDirectlyMentioned ? 'Direct catalog mention' : 'Suggested catalog fit',
+      rationale: isOrganic
+        ? 'Organic chemistry is commonly required or strongly relevant for biology, biochemistry, molecular biology, and pre-professional science tracks.'
+        : 'Chemistry coursework is discipline-aligned with science degree requirements and should be reviewed against the catalog sequence.',
+    }
+  }
+
+  if (/\b(biol|biology|genetics|cell biology|molecular|anatomy|physiology)\b/.test(courseText)) {
+    const isGenetics = /\b(genetics|biol\s*220)\b/.test(courseText)
+    return {
+      catalogCourse: isGenetics ? 'Genetics' : 'Biology major course',
+      requirement: isGenetics ? 'Biology core requirement' : 'Biology major / science requirement',
+      confidence: isDirectlyMentioned ? 'Direct catalog mention' : 'Suggested catalog fit',
+      rationale: isGenetics
+        ? 'The catalog response identifies genetics as directly applicable to biology degree requirements, with lab status needing confirmation where required.'
+        : 'Biology coursework is directly discipline-aligned and should map to the biology core, science prerequisites, or major electives.',
+    }
+  }
+
+  if (/\b(stat|statistics|research methods|quantitative)\b/.test(courseText)) {
+    return {
+      catalogCourse: response.includes('probability and statistics for cs') ? 'Probability and Statistics for CS' : 'CS statistics requirement',
+      requirement: 'Math / quantitative reasoning',
+      confidence: 'Suggested catalog fit',
+      rationale: 'The catalog response links statistics and research methods to data science, modeling, and CS quantitative foundations.',
+    }
+  }
+
+  if (/\b(psyc|psychology|cognitive|abnormal|social|development)\b/.test(courseText)) {
+    return {
+      catalogCourse: response.includes('artificial intelligence') || response.includes('machine learning') ? 'AI / Machine Learning elective' : 'CS elective',
+      requirement: 'Major elective / applied computing',
+      confidence: 'Suggested catalog fit',
+      rationale: 'The catalog response identifies psychology coursework as relevant to analytical reasoning, AI, machine learning, and human behavior models.',
+    }
+  }
+
+  if (/\b(eng|english|composition|writing|communication)\b/.test(courseText)) {
+    return {
+      catalogCourse: response.includes('technical writing') ? 'Technical Writing for CS' : 'Communication requirement',
+      requirement: 'Writing / communication',
+      confidence: 'Suggested catalog fit',
+      rationale: 'The catalog response maps writing and communication coursework to technical documentation and HCI-adjacent CS work.',
+    }
+  }
+
+  if (/\b(hist|history)\b/.test(courseText)) {
+    return {
+      catalogCourse: 'General Education / breadth',
+      requirement: 'General education',
+      confidence: 'Suggested catalog fit',
+      rationale: 'The catalog response states history coursework is likely to satisfy general education breadth requirements.',
+    }
+  }
+
+  if (/\b(math|algebra|calculus)\b/.test(courseText)) {
+    return {
+      catalogCourse: 'CS math prerequisite',
+      requirement: 'Math foundation',
+      confidence: 'Suggested catalog fit',
+      rationale: 'Math coursework supports CS prerequisites and quantitative degree requirements.',
+    }
+  }
+
+  return {
+    catalogCourse: 'No direct equivalent',
+    requirement: 'Advisor review',
+    confidence: 'Needs review',
+    rationale: responseText ? 'The catalog response did not identify a direct course-level match for this transcript course.' : '',
+  }
+}
+
+function normalizeNarrativeEquivalencyRows(responseText, transcriptCourses) {
+  if (!String(responseText || '').trim()) return []
+
+  return transcriptCourses.map((course) => {
+    const inferred = inferNarrativeCatalogMapping(course, responseText)
+    return {
+      id: course.id,
+      institution: course.institution,
+      sourceCourse: course.sourceCourse || '-',
+      sourceTitle: course.sourceTitle || '-',
+      credits: course.credits || '-',
+      catalogCourse: inferred.catalogCourse,
+      catalogTitle: '',
+      requirement: inferred.requirement,
+      confidence: inferred.confidence,
+      rationale: inferred.rationale,
+    }
+  })
+}
+
+function normalizeEquivalencyRows(payload, transcriptCourses) {
+  const responseText = typeof payload?.response === 'string' ? payload.response : typeof payload === 'string' ? payload : ''
+  const parsed = parseEquivalencyJson(payload?.response || payload)
+  const rows = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.equivalencies)
+      ? parsed.equivalencies
+      : Array.isArray(parsed?.courseMappings)
+        ? parsed.courseMappings
+        : Array.isArray(parsed?.mappings)
+          ? parsed.mappings
+          : []
+
+  if (rows.length) {
+    return rows.map((row, index) => {
+      const sourceCourse = row.sourceCourse || row.source_course || row.transcriptCourse || row.transcript_course || row.course || ''
+      const sourceTitle = row.sourceTitle || row.source_title || row.transcriptTitle || row.transcript_title || row.title || ''
+      const matchingCourse = transcriptCourses.find((course) => (
+        sourceCourse && String(course.sourceCourse).toLowerCase() === String(sourceCourse).toLowerCase()
+      )) || transcriptCourses[index] || {}
+
+      return {
+        id: row.id || matchingCourse.id || `equivalency-${index}`,
+        institution: row.institution || matchingCourse.institution || '',
+        sourceCourse: sourceCourse || matchingCourse.sourceCourse || '-',
+        sourceTitle: sourceTitle || matchingCourse.sourceTitle || '-',
+        credits: row.credits ?? matchingCourse.credits ?? '-',
+        catalogCourse: row.catalogCourse || row.catalog_course || row.equivalentCourse || row.equivalent_course || row.mapsTo || row.maps_to || row.mappedTo || '-',
+        catalogTitle: row.catalogTitle || row.catalog_title || row.equivalentTitle || row.equivalent_title || '',
+        requirement: row.requirement || row.countsAs || row.counts_as || row.degreeRequirement || row.degree_requirement || '-',
+        confidence: row.confidence || row.matchConfidence || row.match_confidence || row.status || 'Catalog match',
+        rationale: row.rationale || row.notes || row.reason || '',
+      }
+    })
+  }
+
+  const narrativeRows = normalizeNarrativeEquivalencyRows(responseText, transcriptCourses)
+  if (narrativeRows.length) return narrativeRows
+
+  return transcriptCourses.map((course) => ({
+    id: course.id,
+    institution: course.institution,
+    sourceCourse: course.sourceCourse || '-',
+    sourceTitle: course.sourceTitle || '-',
+    credits: course.credits || '-',
+    catalogCourse: course.mappedTo || '-',
+    catalogTitle: '',
+    requirement: course.countsAs || 'Catalog lookup needed',
+    confidence: course.mappedTo ? 'Transcript mapping' : 'Pending',
+    rationale: course.mappedTo ? 'Existing transcript mapping.' : '',
+  }))
+}
+
+function getEquivalencyCreditSummary(rows) {
+  return rows.reduce((summary, row) => {
+    const credits = getCreditNumber(row.credits)
+    const mappingText = [
+      row.catalogCourse,
+      row.requirement,
+      row.confidence,
+      row.rationale,
+    ].filter(Boolean).join(' ').toLowerCase()
+    const likelyNotTransferable = (
+      mappingText.includes('no direct equivalent')
+      || mappingText.includes('needs review')
+      || mappingText.includes('pending')
+      || mappingText.includes('advisor review')
+      || mappingText.includes('catalog lookup')
+    )
+
+    if (likelyNotTransferable) {
+      return { ...summary, likelyNotTransferable: summary.likelyNotTransferable + credits }
+    }
+
+    return { ...summary, likelyTransferable: summary.likelyTransferable + credits }
+  }, { likelyTransferable: 0, likelyNotTransferable: 0 })
 }
 
 function getTranscriptDocumentUrl(transcript) {
@@ -272,6 +655,70 @@ function buildAcademicTermRows(student) {
 
 function getFirstValue(...values) {
   return values.find((value) => value !== null && value !== undefined && value !== '')
+}
+
+function getStudentFirstName(student) {
+  const name = student?.preferredName || student?.firstName || student?.name || 'there'
+  return String(name).trim().split(/\s+/)[0] || 'there'
+}
+
+function fillCommunicationTemplate(template, student) {
+  const values = {
+    firstName: getStudentFirstName(student),
+    program: getProgramDisplay(student),
+    nextAction: getNextBestAction(student),
+    school: student?.institutionGoal || student?.school || 'your school',
+  }
+  const replaceValue = (text) => String(text || '').replace(/\{(firstName|program|nextAction|school)\}/g, (_, key) => values[key] || '')
+
+  return {
+    subject: replaceValue(template?.subject),
+    body: replaceValue(template?.body),
+  }
+}
+
+function getHandoffs(student) {
+  return Array.isArray(student?.handoffs) ? student.handoffs : []
+}
+
+function buildPostAdmitMilestoneRows(student) {
+  const savedMilestones = Array.isArray(student?.postAdmitMilestones) ? student.postAdmitMilestones : []
+  const savedById = new Map(savedMilestones.map((item) => [item.id, item]))
+
+  return postAdmitMilestones.map((definition) => {
+    const saved = savedById.get(definition.id) || {}
+    const inferredComplete = definition.id === 'deposit_commitment'
+      ? String(student?.stage || '').toLowerCase().includes('deposited') || String(student?.stage || '').toLowerCase().includes('registered')
+      : definition.id === 'registration_status'
+        ? String(student?.stage || '').toLowerCase().includes('registered')
+        : false
+
+    return {
+      ...definition,
+      status: saved.status || (inferredComplete ? 'Complete' : 'Not started'),
+      owner: saved.owner || definition.owner,
+      dueAt: saved.dueAt || saved.due_at || '',
+      blocker: saved.blocker || '',
+      updatedAt: saved.updatedAt || saved.updated_at || '',
+    }
+  })
+}
+
+function getMilestoneSummary(rows) {
+  const total = rows.length
+  const complete = rows.filter((row) => row.status === 'Complete' || row.status === 'Waived').length
+  const blocked = rows.filter((row) => row.status === 'Blocked').length
+
+  return {
+    total,
+    complete,
+    blocked,
+    percent: total ? Math.round((complete / total) * 100) : 0,
+  }
+}
+
+function getRecruitmentEvents(student) {
+  return (Array.isArray(student?.interactions) ? student.interactions : []).filter((item) => item.type === 'recruitment_event')
 }
 
 function getTranscriptDemographic(transcript) {
@@ -513,33 +960,83 @@ function buildDerivedTimeline(student, checklistStats, readiness) {
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus } = useStudentRecords()
-  const { session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent } = useStudentRecords()
+  const { currentUser, session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
   const [detailError, setDetailError] = useState('')
+  const [programError, setProgramError] = useState('')
+  const [programSuccess, setProgramSuccess] = useState('')
+  const [isProgramSaving, setIsProgramSaving] = useState(false)
+  const [equivalencyRows, setEquivalencyRows] = useState([])
+  const [isEquivalencyLoading, setIsEquivalencyLoading] = useState(false)
+  const [equivalencyError, setEquivalencyError] = useState('')
+  const [equivalencyStatus, setEquivalencyStatus] = useState('')
   const [checklistActionError, setChecklistActionError] = useState('')
   const [activeChecklistItemId, setActiveChecklistItemId] = useState('')
   const [liveReadiness, setLiveReadiness] = useState(null)
   const [timelineEvents, setTimelineEvents] = useState([])
   const [timelineMode, setTimelineMode] = useState('derived')
   const [timelineError, setTimelineError] = useState('')
+  const [timelineFilter, setTimelineFilter] = useState('all')
+  const [interactionType, setInteractionType] = useState('call')
+  const [interactionOutcome, setInteractionOutcome] = useState('reached_student')
+  const [interactionNote, setInteractionNote] = useState('')
+  const [interactionNextAction, setInteractionNextAction] = useState('')
+  const [interactionNextFollowUpAt, setInteractionNextFollowUpAt] = useState('')
+  const [interactionError, setInteractionError] = useState('')
+  const [interactionSuccess, setInteractionSuccess] = useState('')
+  const [isSavingInteraction, setIsSavingInteraction] = useState(false)
+  const [communicationTemplateKey, setCommunicationTemplateKey] = useState('new_inquiry')
+  const [communicationChannel, setCommunicationChannel] = useState('email')
+  const [communicationSubject, setCommunicationSubject] = useState('')
+  const [communicationDraft, setCommunicationDraft] = useState('')
+  const [communicationNextFollowUpAt, setCommunicationNextFollowUpAt] = useState('')
+  const [communicationError, setCommunicationError] = useState('')
+  const [communicationSuccess, setCommunicationSuccess] = useState('')
+  const [isLoggingCommunication, setIsLoggingCommunication] = useState(false)
+  const [communicationHistory, setCommunicationHistory] = useState([])
+  const [handoffTarget, setHandoffTarget] = useState('Admissions Operations')
+  const [handoffOwner, setHandoffOwner] = useState('')
+  const [handoffPriority, setHandoffPriority] = useState('Normal')
+  const [handoffStatus, setHandoffStatus] = useState('Open')
+  const [handoffDueAt, setHandoffDueAt] = useState('')
+  const [handoffBlocker, setHandoffBlocker] = useState('')
+  const [handoffError, setHandoffError] = useState('')
+  const [handoffSuccess, setHandoffSuccess] = useState('')
+  const [isSavingHandoff, setIsSavingHandoff] = useState(false)
+  const [milestoneDrafts, setMilestoneDrafts] = useState({})
+  const [activeMilestoneId, setActiveMilestoneId] = useState('')
+  const [milestoneError, setMilestoneError] = useState('')
+  const [milestoneSuccess, setMilestoneSuccess] = useState('')
+  const [recruitmentTerritory, setRecruitmentTerritory] = useState('Transfer Partners')
+  const [recruitmentSchool, setRecruitmentSchool] = useState('')
+  const [recruitmentEventType, setRecruitmentEventType] = useState('College fair')
+  const [recruitmentEventName, setRecruitmentEventName] = useState('')
+  const [recruitmentEventAt, setRecruitmentEventAt] = useState('')
+  const [recruitmentNotes, setRecruitmentNotes] = useState('')
+  const [recruitmentError, setRecruitmentError] = useState('')
+  const [recruitmentSuccess, setRecruitmentSuccess] = useState('')
+  const [isSavingRecruitmentEvent, setIsSavingRecruitmentEvent] = useState(false)
   const [documentViewerUrl, setDocumentViewerUrl] = useState('')
   const [documentViewerError, setDocumentViewerError] = useState('')
   const [isLoadingDocumentViewer, setIsLoadingDocumentViewer] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
-  const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [studentId, students])
+  const displayStudents = useMemo(() => mergeProspectsIntoStudents(students, prospectSubmissions), [students])
+  const summaryStudent = useMemo(() => displayStudents.find((item) => item.id === studentId) || null, [displayStudents, studentId])
   const visibleTabs = useMemo(() => {
     const tabs = [
       { key: 'overview', label: 'Overview', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'timeline', label: 'Timeline', allowed: hasAnyPermission(['view_student_360']) },
+      { key: 'outreach', label: 'Outreach', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'checklist', label: 'Checklist', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'documents', label: 'Documents', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'decisions', label: 'Decisions', allowed: hasAnyPermission(['view_decision_packet', 'release_decision']) },
       { key: 'trust', label: 'Trust', allowed: hasAnyPermission(['view_trust_flags', 'manage_trust_cases']) && hasSensitivityTier('trust_fraud_flags') },
       { key: 'yield', label: 'Yield / Deposit', allowed: hasAnyPermission(['view_student_360', 'view_dashboards']) },
-      { key: 'handoff', label: 'Handoff', allowed: hasAnyPermission(['manage_integrations', 'view_dashboards']) },
+      { key: 'handoff', label: 'Handoff', allowed: hasAnyPermission(['view_student_360', 'manage_integrations', 'view_dashboards']) },
+      { key: 'recruitment', label: 'Recruitment', allowed: hasAnyPermission(['view_student_360', 'view_dashboards']) },
     ]
 
     return tabs.filter((tab) => tab.allowed)
@@ -617,11 +1114,38 @@ export default function StudentProfilePage() {
   const student = studentDetail || summaryStudent
   const checklistStats = getChecklistStats(student)
   const readiness = liveReadiness || getReadiness(student)
+  const selectedCommunicationTemplate = useMemo(
+    () => communicationTemplates.find((template) => template.key === communicationTemplateKey) || communicationTemplates[0],
+    [communicationTemplateKey],
+  )
+  const communicationHistoryRows = useMemo(() => {
+    const savedRows = Array.isArray(student?.interactions)
+      ? student.interactions.filter((item) => item.type === 'communication')
+      : []
+
+    return [...communicationHistory, ...savedRows]
+      .filter((item, index, rows) => rows.findIndex((row) => row.id === item.id) === index)
+      .sort((first, second) => {
+        const firstTime = new Date(first.occurredAt).getTime()
+        const secondTime = new Date(second.occurredAt).getTime()
+        if (Number.isNaN(firstTime) || Number.isNaN(secondTime)) return 0
+        return secondTime - firstTime
+      })
+  }, [communicationHistory, student])
+  const handoffRows = useMemo(() => getHandoffs(student), [student])
+  const postAdmitMilestoneRows = useMemo(() => buildPostAdmitMilestoneRows(student), [student])
+  const milestoneSummary = useMemo(() => getMilestoneSummary(postAdmitMilestoneRows), [postAdmitMilestoneRows])
+  const recruitmentEvents = useMemo(() => getRecruitmentEvents(student), [student])
   const derivedTimelineEvents = useMemo(
     () => buildDerivedTimeline(student, checklistStats, readiness),
     [checklistStats, readiness, student],
   )
   const displayTimelineEvents = timelineEvents.length ? timelineEvents : derivedTimelineEvents
+  const filteredTimelineEvents = useMemo(() => (
+    timelineFilter === 'all'
+      ? displayTimelineEvents
+      : displayTimelineEvents.filter((event) => event.type === timelineFilter)
+  ), [displayTimelineEvents, timelineFilter])
   const academicTermRows = useMemo(() => buildAcademicTermRows(student), [student])
   const academicSummary = useMemo(() => {
     if (!student) return { overallGpa: '-', totalCredits: '-' }
@@ -638,6 +1162,121 @@ export default function StudentProfilePage() {
   }, [academicTermRows, student])
   const subjectGpaRows = useMemo(() => buildSubjectGpaRows(student), [student])
   const testScoreRows = useMemo(() => buildTestScoreRows(student), [student])
+  const transcriptCourseRows = useMemo(() => buildTranscriptCourseRows(student), [student])
+  const equivalencyCreditSummary = useMemo(() => getEquivalencyCreditSummary(equivalencyRows), [equivalencyRows])
+  const programOptions = useMemo(() => {
+    const scopedPrograms = Array.isArray(currentUser?.scopes?.programs)
+      ? currentUser.scopes.programs.filter((program) => program && program !== '*')
+      : []
+    const recordPrograms = displayStudents
+      .map((item) => getProgramDisplay(item))
+      .filter((program) => program && program !== 'Program pending')
+    const currentProgram = getProgramDisplay(student)
+
+    return Array.from(new Set([
+      currentProgram,
+      ...scopedPrograms,
+      ...recordPrograms,
+      ...defaultProgramOptions,
+    ].filter(Boolean)))
+  }, [currentUser, displayStudents, student])
+
+  useEffect(() => {
+    if (!student || !selectedCommunicationTemplate) return
+    const filledTemplate = fillCommunicationTemplate(selectedCommunicationTemplate, student)
+    setCommunicationSubject(filledTemplate.subject)
+    setCommunicationDraft(filledTemplate.body)
+  }, [selectedCommunicationTemplate, student])
+
+  useEffect(() => {
+    const nextDrafts = {}
+    postAdmitMilestoneRows.forEach((row) => {
+      nextDrafts[row.id] = {
+        status: row.status,
+        owner: row.owner,
+        dueAt: row.dueAt,
+        blocker: row.blocker,
+      }
+    })
+    setMilestoneDrafts(nextDrafts)
+  }, [postAdmitMilestoneRows])
+
+  const loadEquivalencies = useCallback(async () => {
+    const program = getProgramDisplay(student)
+
+    setEquivalencyError('')
+    setEquivalencyStatus('')
+
+    if (!transcriptCourseRows.length) {
+      setEquivalencyRows([])
+      setEquivalencyStatus('No transcript courses are available yet.')
+      return
+    }
+
+    if (!chatApiBaseUrl) {
+      setEquivalencyRows(normalizeEquivalencyRows(null, transcriptCourseRows))
+      setEquivalencyError('VITE_CHAT_URL is not configured for catalog lookup. Showing available transcript mappings.')
+      return
+    }
+
+    if (!session?.access_token) {
+      setEquivalencyRows(normalizeEquivalencyRows(null, transcriptCourseRows))
+      setEquivalencyError('Sign in is required before using catalog lookup. Showing available transcript mappings.')
+      return
+    }
+
+    setIsEquivalencyLoading(true)
+
+    try {
+      const coursesForLookup = transcriptCourseRows.slice(0, 80).map((course) => ({
+        sourceCourse: course.sourceCourse,
+        sourceTitle: course.sourceTitle,
+        credits: course.credits,
+        grade: course.grade,
+        institution: course.institution,
+        term: course.term,
+        year: course.year,
+      }))
+
+      const response = await fetch(`${chatApiBaseUrl}/api/agent/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          dataClassification: 'internal',
+          workspaceId: `student-${studentId}-equivalency`,
+          message: [
+            'Use the course catalog connection to map transcript courses to the selected degree/program.',
+            `Selected degree/program: ${program}.`,
+            `Student: ${student?.name || studentId}.`,
+            'Return only valid JSON with this shape:',
+            '{"equivalencies":[{"sourceCourse":"","sourceTitle":"","credits":"","catalogCourse":"","catalogTitle":"","requirement":"","confidence":"","rationale":""}]}',
+            'Return exactly one equivalency row for each transcript course provided, in the same order.',
+            'Use catalog courses and requirements for the selected degree/program. If no catalog match exists, set catalogCourse to "No direct equivalent" and explain the gap in rationale.',
+            'If a course is discipline-aligned but not an exact catalog number match, map it to the closest subject requirement or elective category instead of "No direct equivalent". For example, Organic Chemistry should map to a Chemistry or science requirement for Biology programs.',
+            'Do not return a narrative summary, markdown, or action plan.',
+            `Transcript courses: ${JSON.stringify(coursesForLookup)}`,
+          ].join('\n'),
+        }),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (!response.ok) {
+        throw new Error(payload?.message || payload?.detail || payload?.error || `Catalog lookup failed: ${response.status}`)
+      }
+
+      const nextRows = normalizeEquivalencyRows(payload, transcriptCourseRows)
+      setEquivalencyRows(nextRows)
+      setEquivalencyStatus(payload?.auditId ? `Catalog lookup complete. Audit ID: ${payload.auditId}` : 'Catalog lookup complete.')
+    } catch (error) {
+      setEquivalencyRows(normalizeEquivalencyRows(null, transcriptCourseRows))
+      setEquivalencyError(error.message || 'Catalog lookup failed. Showing available transcript mappings.')
+    } finally {
+      setIsEquivalencyLoading(false)
+    }
+  }, [session?.access_token, student, studentId, transcriptCourseRows])
 
   const loadTimeline = useCallback(async () => {
     if (!studentId || !session?.access_token || !session?.tenant_id) return
@@ -664,6 +1303,11 @@ export default function StudentProfilePage() {
   useEffect(() => {
     loadTimeline()
   }, [loadTimeline])
+
+  useEffect(() => {
+    if (activeTab !== 'overview' || !student) return
+    loadEquivalencies()
+  }, [activeTab, loadEquivalencies, student])
 
   useEffect(() => {
     let isActive = true
@@ -721,7 +1365,7 @@ export default function StudentProfilePage() {
     }
   }, [fetchWithTenantAuth, selectedTranscript, session])
 
-  if ((isLoadingStudents || isLoadingDetail) && !studentDetail) {
+  if ((isLoadingStudents || isLoadingDetail) && !studentDetail && !summaryStudent) {
     return (
       <div className="page-wrap">
         <Link to="/students" className="back-link"><ArrowLeft size={16} /> Back to students</Link>
@@ -732,7 +1376,7 @@ export default function StudentProfilePage() {
     )
   }
 
-  if ((studentsError || detailError) && !studentDetail) {
+  if ((studentsError || detailError) && !studentDetail && !summaryStudent) {
     return (
       <div className="page-wrap">
         <Link to="/students" className="back-link"><ArrowLeft size={16} /> Back to students</Link>
@@ -755,10 +1399,306 @@ export default function StudentProfilePage() {
     )
   }
 
-  const programName = getProgramName(student)
+  const programName = getProgramDisplay(student)
   const headerSubtitle = programName === 'Transcript intake'
     ? 'Transcript intake'
     : `${programName} - Goal: ${student.institutionGoal || 'Not set'}`
+
+  async function handleProgramChange(event) {
+    const nextProgram = event.target.value
+    const previousStudentDetail = studentDetail
+    const currentProgram = getProgramDisplay(student)
+
+    if (!nextProgram || nextProgram === currentProgram) return
+
+    setProgramError('')
+    setProgramSuccess('')
+    setIsProgramSaving(true)
+
+    if (studentDetail) {
+      setStudentDetail((current) => current ? {
+        ...current,
+        program: nextProgram,
+        degreeProgram: nextProgram,
+        programInterest: nextProgram,
+      } : current)
+    }
+
+    try {
+      const updatedStudent = await updateStudentProgram({ studentId, program: nextProgram })
+      setStudentDetail((current) => current ? {
+        ...current,
+        ...updatedStudent,
+        program: nextProgram,
+        degreeProgram: nextProgram,
+        programInterest: nextProgram,
+      } : current)
+      setProgramSuccess('Program updated.')
+    } catch (error) {
+      if (previousStudentDetail) setStudentDetail(previousStudentDetail)
+      setProgramError(error.message || 'Unable to update program.')
+    } finally {
+      setIsProgramSaving(false)
+    }
+  }
+
+  async function handleInteractionSubmit(event) {
+    event.preventDefault()
+    setInteractionError('')
+    setInteractionSuccess('')
+
+    const note = interactionNote.trim()
+    if (!note) {
+      setInteractionError('Enter a note for this activity.')
+      return
+    }
+
+    setIsSavingInteraction(true)
+
+    try {
+      const typeLabel = interactionTypes.find((item) => item.value === interactionType)?.label || 'Interaction'
+      const outcomeLabel = interactionOutcomes.find((item) => item.value === interactionOutcome)?.label || ''
+      const interaction = {
+        type: interactionType,
+        outcome: interactionOutcome,
+        title: typeLabel,
+        note,
+        description: note,
+        nextAction: interactionNextAction.trim(),
+        nextFollowUpAt: interactionNextFollowUpAt ? new Date(interactionNextFollowUpAt).toISOString() : '',
+        occurredAt: new Date().toISOString(),
+        actor: currentUser?.displayName || currentUser?.email || session?.username || 'Admissions',
+        source: 'student_360',
+      }
+      const savedInteraction = await addStudentInteraction({ studentId, interaction })
+      const timelineEvent = {
+        id: savedInteraction.id || `interaction-${Date.now()}`,
+        type: 'interaction',
+        title: savedInteraction.title || typeLabel,
+        description: savedInteraction.description || savedInteraction.note || note,
+        occurredAt: savedInteraction.occurredAt || interaction.occurredAt,
+        actor: savedInteraction.actor || interaction.actor,
+        source: savedInteraction.source || 'student_360',
+        status: outcomeLabel,
+      }
+
+      setTimelineEvents((current) => [timelineEvent, ...current])
+      setTimelineMode((current) => current === 'live' ? 'live' : 'derived')
+      setInteractionNote('')
+      setInteractionNextAction('')
+      setInteractionNextFollowUpAt('')
+      setInteractionSuccess('Activity added to the timeline.')
+    } catch (error) {
+      setInteractionError(error.message || 'Unable to add activity.')
+    } finally {
+      setIsSavingInteraction(false)
+    }
+  }
+
+  async function handleCommunicationSubmit(event) {
+    event.preventDefault()
+    setCommunicationError('')
+    setCommunicationSuccess('')
+
+    const message = communicationDraft.trim()
+    if (!message) {
+      setCommunicationError('Enter a message before logging outreach.')
+      return
+    }
+
+    setIsLoggingCommunication(true)
+
+    try {
+      const channelLabel = communicationChannels.find((channel) => channel.value === communicationChannel)?.label || 'Outreach'
+      const templateLabel = communicationTemplates.find((template) => template.key === communicationTemplateKey)?.label || 'Custom'
+      const actor = currentUser?.displayName || currentUser?.email || session?.username || 'Admissions'
+      const communication = {
+        channel: communicationChannel,
+        templateKey: communicationTemplateKey,
+        templateLabel,
+        subject: communicationSubject.trim(),
+        message,
+        note: message,
+        status: 'logged',
+        title: `${channelLabel} outreach`,
+        nextAction: `Follow up on ${templateLabel.toLowerCase()} outreach`,
+        nextFollowUpAt: communicationNextFollowUpAt ? new Date(communicationNextFollowUpAt).toISOString() : '',
+        occurredAt: new Date().toISOString(),
+        actor,
+        source: 'student_360_outreach',
+      }
+      const savedCommunication = await logStudentCommunication({ studentId, communication })
+      const timelineEvent = {
+        id: savedCommunication.id || `communication-${Date.now()}`,
+        type: 'communication',
+        title: savedCommunication.title || `${channelLabel} outreach`,
+        description: savedCommunication.message || savedCommunication.description || message,
+        occurredAt: savedCommunication.occurredAt || communication.occurredAt,
+        actor: savedCommunication.actor || actor,
+        source: savedCommunication.source || 'student_360_outreach',
+        status: templateLabel,
+      }
+
+      setTimelineEvents((current) => [timelineEvent, ...current])
+      setCommunicationHistory((current) => [savedCommunication, ...current])
+      setTimelineMode((current) => current === 'live' ? 'live' : 'derived')
+      setCommunicationNextFollowUpAt('')
+      setCommunicationSuccess('Outreach logged to the timeline.')
+    } catch (error) {
+      setCommunicationError(error.message || 'Unable to log outreach.')
+    } finally {
+      setIsLoggingCommunication(false)
+    }
+  }
+
+  async function handleHandoffSubmit(event) {
+    event.preventDefault()
+    setHandoffError('')
+    setHandoffSuccess('')
+
+    if (!handoffBlocker.trim()) {
+      setHandoffError('Enter the blocker or work requested for this handoff.')
+      return
+    }
+
+    setIsSavingHandoff(true)
+
+    try {
+      const actor = currentUser?.displayName || currentUser?.email || session?.username || 'Admissions'
+      const handoff = {
+        targetTeam: handoffTarget,
+        owner: handoffOwner.trim() || handoffTarget,
+        priority: handoffPriority,
+        status: handoffStatus,
+        dueAt: handoffDueAt ? new Date(handoffDueAt).toISOString() : '',
+        blocker: handoffBlocker.trim(),
+        summary: `${handoffTarget}: ${handoffBlocker.trim()}`,
+        actor,
+      }
+      const savedHandoff = await createStudentHandoff({ studentId, handoff })
+      const timelineEvent = {
+        id: savedHandoff.id || `handoff-${Date.now()}`,
+        type: 'handoff',
+        title: `Handoff to ${savedHandoff.targetTeam || handoffTarget}`,
+        description: savedHandoff.blocker || handoff.blocker,
+        occurredAt: savedHandoff.createdAt || new Date().toISOString(),
+        actor,
+        source: 'student_360_handoff',
+        status: savedHandoff.status || handoffStatus,
+      }
+
+      setTimelineEvents((current) => [timelineEvent, ...current])
+      setStudentDetail((current) => current ? {
+        ...current,
+        handoffs: [savedHandoff, ...(Array.isArray(current.handoffs) ? current.handoffs : [])],
+      } : current)
+      setHandoffBlocker('')
+      setHandoffDueAt('')
+      setHandoffSuccess('Handoff created.')
+    } catch (error) {
+      setHandoffError(error.message || 'Unable to create handoff.')
+    } finally {
+      setIsSavingHandoff(false)
+    }
+  }
+
+  async function handleMilestoneSave(milestoneId) {
+    const draft = milestoneDrafts[milestoneId]
+    if (!draft) return
+
+    setMilestoneError('')
+    setMilestoneSuccess('')
+    setActiveMilestoneId(milestoneId)
+
+    try {
+      const definition = postAdmitMilestones.find((item) => item.id === milestoneId)
+      const milestone = {
+        label: definition?.label || milestoneId,
+        status: draft.status,
+        owner: draft.owner,
+        dueAt: draft.dueAt ? new Date(draft.dueAt).toISOString() : '',
+        blocker: draft.blocker,
+      }
+      const savedMilestone = await updateStudentMilestone({ studentId, milestoneId, milestone })
+      const timelineEvent = {
+        id: `milestone-${milestoneId}-${Date.now()}`,
+        type: 'post_admit',
+        title: `${milestone.label}: ${savedMilestone.status || milestone.status}`,
+        description: savedMilestone.blocker || milestone.blocker || '',
+        occurredAt: savedMilestone.updatedAt || new Date().toISOString(),
+        actor: currentUser?.displayName || currentUser?.email || session?.username || 'Admissions',
+        source: 'student_360_post_admit',
+        status: savedMilestone.status || milestone.status,
+      }
+
+      setTimelineEvents((current) => [timelineEvent, ...current])
+      setStudentDetail((current) => {
+        if (!current) return current
+        const milestones = Array.isArray(current.postAdmitMilestones) ? current.postAdmitMilestones : []
+        return {
+          ...current,
+          postAdmitMilestones: milestones.some((item) => item.id === milestoneId)
+            ? milestones.map((item) => item.id === milestoneId ? { ...item, ...savedMilestone } : item)
+            : [{ id: milestoneId, ...savedMilestone }, ...milestones],
+        }
+      })
+      setMilestoneSuccess('Milestone updated.')
+    } catch (error) {
+      setMilestoneError(error.message || 'Unable to update milestone.')
+    } finally {
+      setActiveMilestoneId('')
+    }
+  }
+
+  async function handleRecruitmentSubmit(event) {
+    event.preventDefault()
+    setRecruitmentError('')
+    setRecruitmentSuccess('')
+
+    if (!recruitmentSchool.trim() && !recruitmentEventName.trim()) {
+      setRecruitmentError('Enter a school, partner, or event name.')
+      return
+    }
+
+    setIsSavingRecruitmentEvent(true)
+
+    try {
+      const actor = currentUser?.displayName || currentUser?.email || session?.username || 'Admissions'
+      const eventRecord = {
+        territory: recruitmentTerritory,
+        school: recruitmentSchool.trim(),
+        eventType: recruitmentEventType,
+        eventName: recruitmentEventName.trim() || recruitmentEventType,
+        notes: recruitmentNotes.trim(),
+        occurredAt: recruitmentEventAt ? new Date(recruitmentEventAt).toISOString() : new Date().toISOString(),
+        actor,
+        outcome: 'attributed',
+      }
+      const savedEvent = await logRecruitmentEvent({ studentId, event: eventRecord })
+      const timelineEvent = {
+        id: savedEvent.id || `recruitment-${Date.now()}`,
+        type: 'recruitment_event',
+        title: savedEvent.eventName || eventRecord.eventName,
+        description: savedEvent.notes || savedEvent.description || '',
+        occurredAt: savedEvent.occurredAt || eventRecord.occurredAt,
+        actor,
+        source: savedEvent.territory || recruitmentTerritory,
+        status: savedEvent.eventType || recruitmentEventType,
+      }
+
+      setTimelineEvents((current) => [timelineEvent, ...current])
+      setRecruitmentEventName('')
+      setRecruitmentSchool('')
+      setRecruitmentNotes('')
+      setRecruitmentEventAt('')
+      setRecruitmentSuccess('Recruitment activity logged.')
+    } catch (error) {
+      setRecruitmentError(error.message || 'Unable to log recruitment activity.')
+    } finally {
+      setIsSavingRecruitmentEvent(false)
+    }
+  }
+
   async function handleChecklistAction(item) {
     setChecklistActionError('')
     setActiveChecklistItemId(item.id)
@@ -825,12 +1765,24 @@ export default function StudentProfilePage() {
             <span><Mail size={16} /> {student.email || 'No email on file'}</span>
             <span><Phone size={16} /> {student.phone || 'No phone on file'}</span>
             <span><MapPin size={16} /> {student.city || 'Location pending'}</span>
+            <label className="profile-program-field">
+              <span>Program</span>
+              <select value={getProgramDisplay(student)} onChange={handleProgramChange} disabled={isProgramSaving}>
+                {programOptions.map((program) => (
+                  <option key={program} value={program}>{program}</option>
+                ))}
+              </select>
+            </label>
             <span>ID {student.id}</span>
             <span>Source {student.source || 'Not set'}</span>
             <span>Population {student.population || 'Not set'}</span>
             <span>Last activity {student.lastActivity || student.updatedAt || 'Pending'}</span>
+            <span>Last contact {formatTimelineTime(student.lastContactedAt || student.last_contacted_at)}</span>
+            <span>Next follow-up {formatTimelineTime(student.nextFollowUpAt || student.next_follow_up_at)}</span>
             <span>Next action {getNextBestAction(student)}</span>
           </div>
+          {programError ? <p className="auth-error">{programError}</p> : null}
+          {programSuccess ? <p className="auth-success">{programSuccess}</p> : null}
 
           <div className="metric-cluster profile-metrics">
             <div><span>Fit score</span><strong>{hasSensitivityTier('academic_record') ? formatPercentScore(student.fitScore) : '-'}</strong></div>
@@ -927,6 +1879,68 @@ export default function StudentProfilePage() {
             </SensitivityGuard>
           </article>
         ) : null}
+
+        {transcriptCourseRows.length ? (
+        <article className="panel equivalency-card">
+          <div className="panel-header">
+            <div>
+              <h3>Course equivalency</h3>
+              <p>Catalog mapping for {getProgramDisplay(student)} using transcript courses.</p>
+            </div>
+            <div className="equivalency-header-actions">
+              <div className="equivalency-credit-summary" aria-label="Equivalency credit summary">
+                <div><span>Might transfer</span><strong>{formatCredits(equivalencyCreditSummary.likelyTransferable)}</strong></div>
+                <div><span>Likely won't</span><strong>{formatCredits(equivalencyCreditSummary.likelyNotTransferable)}</strong></div>
+              </div>
+              <button type="button" className="secondary-button" onClick={loadEquivalencies} disabled={isEquivalencyLoading}>
+                {isEquivalencyLoading ? 'Looking up...' : 'Refresh catalog map'}
+              </button>
+            </div>
+          </div>
+          <SensitivityGuard tier="academic_record" fallback={<p className="muted-copy">Course equivalency details are hidden for your access level.</p>}>
+            {equivalencyError ? <p className="auth-error">{equivalencyError}</p> : null}
+            {equivalencyStatus ? <p className="muted-copy">{equivalencyStatus}</p> : null}
+            {isEquivalencyLoading && !equivalencyRows.length ? <p className="muted-copy">Checking the course catalog...</p> : null}
+            {equivalencyRows.length ? (
+              <div className="table-wrap equivalency-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Transcript course</th>
+                      <th>Credits</th>
+                      <th>Catalog course</th>
+                      <th>Degree requirement</th>
+                      <th>Match</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equivalencyRows.map((row) => (
+                      <tr key={row.id}>
+                        <td>
+                          <strong>{row.sourceCourse}</strong>
+                          <div className="table-sub">{row.sourceTitle}</div>
+                        </td>
+                        <td>{formatCredits(row.credits)}</td>
+                        <td>
+                          <strong>{row.catalogCourse}</strong>
+                          {row.catalogTitle ? <div className="table-sub">{row.catalogTitle}</div> : null}
+                        </td>
+                        <td>{row.requirement}</td>
+                        <td>
+                          <span className="badge neutral-badge">{row.confidence}</span>
+                          {row.rationale ? <div className="table-sub">{row.rationale}</div> : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : !isEquivalencyLoading ? (
+              <p className="muted-copy">No course equivalency rows are available yet.</p>
+            ) : null}
+          </SensitivityGuard>
+        </article>
+        ) : null}
       </section>
       ) : null}
 
@@ -947,8 +1961,59 @@ export default function StudentProfilePage() {
               </div>
               <span className="badge neutral-badge">{displayTimelineEvents.length}</span>
             </div>
+            <form className="student-activity-composer" onSubmit={handleInteractionSubmit}>
+              <div className="student-activity-grid">
+                <label className="auth-field compact-field">
+                  <span>Activity</span>
+                  <select value={interactionType} onChange={(event) => setInteractionType(event.target.value)}>
+                    {interactionTypes.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Outcome</span>
+                  <select value={interactionOutcome} onChange={(event) => setInteractionOutcome(event.target.value)}>
+                    {interactionOutcomes.map((outcome) => (
+                      <option key={outcome.value} value={outcome.value}>{outcome.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Next follow-up</span>
+                  <input type="datetime-local" value={interactionNextFollowUpAt} onChange={(event) => setInteractionNextFollowUpAt(event.target.value)} />
+                </label>
+              </div>
+              <label className="auth-field">
+                <span>Note</span>
+                <textarea value={interactionNote} onChange={(event) => setInteractionNote(event.target.value)} placeholder="Summarize the call, text, email, meeting, family conversation, or next step." />
+              </label>
+              <label className="auth-field">
+                <span>Next action</span>
+                <input value={interactionNextAction} onChange={(event) => setInteractionNextAction(event.target.value)} placeholder="Request transcript, answer aid question, schedule advising handoff..." />
+              </label>
+              {interactionError ? <p className="auth-error">{interactionError}</p> : null}
+              {interactionSuccess ? <p className="auth-success">{interactionSuccess}</p> : null}
+              <div className="password-actions">
+                <button type="submit" className="primary-button" disabled={isSavingInteraction}>
+                  {isSavingInteraction ? 'Saving...' : 'Add activity'}
+                </button>
+              </div>
+            </form>
+            <div className="pill-row compact">
+              {['all', 'communication', 'interaction', 'handoff', 'post_admit', 'recruitment_event', 'transcript', 'checklist', 'readiness', 'decision', 'inquiry'].map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={`tag ${timelineFilter === filter ? 'active-tag' : ''}`}
+                  onClick={() => setTimelineFilter(filter)}
+                >
+                  {filter === 'all' ? 'All activity' : filter}
+                </button>
+              ))}
+            </div>
             <div className="timeline-list student360-timeline">
-              {displayTimelineEvents.map((event) => (
+              {filteredTimelineEvents.map((event) => (
                 <div key={event.id} className="timeline-item">
                   <div className="timeline-rail" />
                   <div className="timeline-content">
@@ -968,7 +2033,90 @@ export default function StudentProfilePage() {
                   </div>
                 </div>
               ))}
-              {!displayTimelineEvents.length ? <p className="muted-copy">No timeline events are available yet.</p> : null}
+              {!filteredTimelineEvents.length ? <p className="muted-copy">No timeline events are available for this filter.</p> : null}
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      {activeTab === 'outreach' ? (
+        <section className="dashboard-grid profile-grid outreach-grid">
+          <article className="panel outreach-composer-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Outreach</h3>
+                <p>Template, personalize, and log counselor follow-up.</p>
+              </div>
+              <span className="badge neutral-badge">{programName}</span>
+            </div>
+            <form className="student-activity-composer outreach-composer" onSubmit={handleCommunicationSubmit}>
+              <div className="student-activity-grid">
+                <label className="auth-field compact-field">
+                  <span>Template</span>
+                  <select value={communicationTemplateKey} onChange={(event) => setCommunicationTemplateKey(event.target.value)}>
+                    {communicationTemplates.map((template) => (
+                      <option key={template.key} value={template.key}>{template.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Channel</span>
+                  <select value={communicationChannel} onChange={(event) => setCommunicationChannel(event.target.value)}>
+                    {communicationChannels.map((channel) => (
+                      <option key={channel.value} value={channel.value}>{channel.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Next follow-up</span>
+                  <input type="datetime-local" value={communicationNextFollowUpAt} onChange={(event) => setCommunicationNextFollowUpAt(event.target.value)} />
+                </label>
+              </div>
+              <label className="auth-field">
+                <span>Subject</span>
+                <input value={communicationSubject} onChange={(event) => setCommunicationSubject(event.target.value)} />
+              </label>
+              <label className="auth-field">
+                <span>Draft</span>
+                <textarea value={communicationDraft} onChange={(event) => setCommunicationDraft(event.target.value)} />
+              </label>
+              {communicationError ? <p className="auth-error">{communicationError}</p> : null}
+              {communicationSuccess ? <p className="auth-success">{communicationSuccess}</p> : null}
+              <div className="password-actions">
+                <button type="submit" className="primary-button" disabled={isLoggingCommunication}>
+                  {isLoggingCommunication ? 'Logging...' : 'Log outreach'}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="panel outreach-history-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Communication history</h3>
+                <p>Logged outreach for this student.</p>
+              </div>
+              <span className="badge neutral-badge">{communicationHistoryRows.length}</span>
+            </div>
+            <div className="communication-history-list">
+              {communicationHistoryRows.map((item) => (
+                <div key={item.id} className="communication-history-row">
+                  <div className="timeline-top">
+                    <div>
+                      <h4>{item.subject || item.title || 'Outreach'}</h4>
+                      <p>{item.message || item.description || item.note}</p>
+                    </div>
+                    <span className="badge neutral-badge">{item.channel || item.templateLabel || item.status || 'logged'}</span>
+                  </div>
+                  <div className="timeline-meta">
+                    <span>{formatTimelineTime(item.occurredAt)}</span>
+                    {item.actor ? <span>{item.actor}</span> : null}
+                    {item.templateLabel ? <span>{item.templateLabel}</span> : null}
+                    {item.nextFollowUpAt ? <span>Follow-up {formatTimelineTime(item.nextFollowUpAt)}</span> : null}
+                  </div>
+                </div>
+              ))}
+              {!communicationHistoryRows.length ? <p className="muted-copy">No outreach has been logged yet.</p> : null}
             </div>
           </article>
         </section>
@@ -1091,35 +2239,248 @@ export default function StudentProfilePage() {
       ) : null}
 
       {activeTab === 'yield' ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Yield / Deposit</h3>
-              <p>Admit-stage conversion signals and next interventions.</p>
+        <section className="dashboard-grid profile-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Yield / Deposit</h3>
+                <p>Admit-stage conversion signals and next interventions.</p>
+              </div>
             </div>
-          </div>
-          <div className="metric-cluster profile-metrics">
-            <div><span>Deposit likelihood</span><strong>{formatPercentScore(student.depositLikelihood)}</strong></div>
-            <div><span>Fit score</span><strong>{formatPercentScore(student.fitScore)}</strong></div>
-            <div><span>Owner</span><strong>{student.advisor || 'Unassigned'}</strong></div>
-            <div><span>Next action</span><strong>{student.recommendation?.nextBestAction || student.nextBestAction || 'Review'}</strong></div>
-          </div>
+            <div className="metric-cluster profile-metrics">
+              <div><span>Deposit likelihood</span><strong>{formatPercentScore(student.depositLikelihood)}</strong></div>
+              <div><span>Fit score</span><strong>{formatPercentScore(student.fitScore)}</strong></div>
+              <div><span>Owner</span><strong>{student.advisor || 'Unassigned'}</strong></div>
+              <div><span>Readiness</span><strong>{milestoneSummary.percent}%</strong></div>
+            </div>
+            <div className="callout-card">
+              <h4>Post-admit blockers</h4>
+              <p>{milestoneSummary.blocked ? `${milestoneSummary.blocked} milestone${milestoneSummary.blocked === 1 ? '' : 's'} blocked.` : 'No blocked post-admit milestones are currently marked.'}</p>
+              <p><strong>Next:</strong> {student.recommendation?.nextBestAction || student.nextBestAction || 'Review next enrollment step'}</p>
+            </div>
+          </article>
+
+          <article className="panel post-admit-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Post-admit readiness</h3>
+                <p>Financial aid, housing, orientation, advising, registration, and account milestones.</p>
+              </div>
+              <span className="badge neutral-badge">{milestoneSummary.complete}/{milestoneSummary.total}</span>
+            </div>
+            {milestoneError ? <p className="auth-error">{milestoneError}</p> : null}
+            {milestoneSuccess ? <p className="auth-success">{milestoneSuccess}</p> : null}
+            <div className="milestone-list">
+              {postAdmitMilestoneRows.map((row) => {
+                const draft = milestoneDrafts[row.id] || row
+                return (
+                  <div key={row.id} className="milestone-row">
+                    <div>
+                      <h4>{row.label}</h4>
+                      <p>{row.owner}</p>
+                    </div>
+                    <label className="auth-field compact-field">
+                      <span>Status</span>
+                      <select
+                        value={draft.status}
+                        onChange={(event) => setMilestoneDrafts((current) => ({
+                          ...current,
+                          [row.id]: { ...(current[row.id] || row), status: event.target.value },
+                        }))}
+                      >
+                        {milestoneStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <label className="auth-field compact-field">
+                      <span>Owner</span>
+                      <input
+                        value={draft.owner}
+                        onChange={(event) => setMilestoneDrafts((current) => ({
+                          ...current,
+                          [row.id]: { ...(current[row.id] || row), owner: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <label className="auth-field compact-field">
+                      <span>Due</span>
+                      <input
+                        type="date"
+                        value={draft.dueAt ? String(draft.dueAt).slice(0, 10) : ''}
+                        onChange={(event) => setMilestoneDrafts((current) => ({
+                          ...current,
+                          [row.id]: { ...(current[row.id] || row), dueAt: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <label className="auth-field compact-field">
+                      <span>Blocker</span>
+                      <input
+                        value={draft.blocker || ''}
+                        onChange={(event) => setMilestoneDrafts((current) => ({
+                          ...current,
+                          [row.id]: { ...(current[row.id] || row), blocker: event.target.value },
+                        }))}
+                      />
+                    </label>
+                    <button type="button" className="secondary-button" onClick={() => handleMilestoneSave(row.id)} disabled={activeMilestoneId === row.id}>
+                      {activeMilestoneId === row.id ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </article>
         </section>
       ) : null}
 
       {activeTab === 'handoff' ? (
-        <section className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Handoff</h3>
-              <p>Downstream readiness, sync posture, and cross-office blockers.</p>
+        <section className="dashboard-grid profile-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Create handoff</h3>
+                <p>Route student work to admissions operations, reviewers, financial aid, registrar, advising, housing, or bursar teams.</p>
+              </div>
             </div>
-          </div>
-          <div className="stack-list">
-            <div className="stack-row"><strong>Admissions ready</strong><span>{checklistStats.completionPercent === 100 ? 'Yes' : 'Not yet'}</span></div>
-            <div className="stack-row"><strong>Decision readiness</strong><span>{readiness.label}</span></div>
-            <div className="stack-row"><strong>Integration status</strong><span>Awaiting backend handoff model</span></div>
-          </div>
+            <form className="student-activity-composer" onSubmit={handleHandoffSubmit}>
+              <div className="student-activity-grid">
+                <label className="auth-field compact-field">
+                  <span>Target</span>
+                  <select value={handoffTarget} onChange={(event) => setHandoffTarget(event.target.value)}>
+                    {handoffTargets.map((target) => <option key={target} value={target}>{target}</option>)}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Priority</span>
+                  <select value={handoffPriority} onChange={(event) => setHandoffPriority(event.target.value)}>
+                    {handoffPriorities.map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Status</span>
+                  <select value={handoffStatus} onChange={(event) => setHandoffStatus(event.target.value)}>
+                    {handoffStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="student-activity-grid">
+                <label className="auth-field compact-field">
+                  <span>Owner</span>
+                  <input value={handoffOwner} onChange={(event) => setHandoffOwner(event.target.value)} placeholder="Team member or queue" />
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Due</span>
+                  <input type="datetime-local" value={handoffDueAt} onChange={(event) => setHandoffDueAt(event.target.value)} />
+                </label>
+              </div>
+              <label className="auth-field">
+                <span>Blocker / request</span>
+                <textarea value={handoffBlocker} onChange={(event) => setHandoffBlocker(event.target.value)} placeholder="Summarize the blocker, owner request, and expected outcome." />
+              </label>
+              {handoffError ? <p className="auth-error">{handoffError}</p> : null}
+              {handoffSuccess ? <p className="auth-success">{handoffSuccess}</p> : null}
+              <div className="password-actions">
+                <button type="submit" className="primary-button" disabled={isSavingHandoff}>
+                  {isSavingHandoff ? 'Creating...' : 'Create handoff'}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Handoff queue</h3>
+                <p>Open ownership, due dates, and blockers for this student.</p>
+              </div>
+              <span className="badge neutral-badge">{handoffRows.length}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>Admissions ready</strong><span>{checklistStats.completionPercent === 100 ? 'Yes' : 'Not yet'}</span></div>
+              <div className="stack-row"><strong>Decision readiness</strong><span>{readiness.label}</span></div>
+              {handoffRows.map((handoff) => (
+                <div key={handoff.id} className="stack-row handoff-stack-row">
+                  <strong>{handoff.targetTeam || 'Handoff'}</strong>
+                  <span>{handoff.owner || 'Unassigned'} - {handoff.status || 'Open'} - {handoff.dueAt ? formatTimelineTime(handoff.dueAt) : 'No due date'}</span>
+                  {handoff.blocker ? <small>{handoff.blocker}</small> : null}
+                </div>
+              ))}
+              {!handoffRows.length ? <div className="stack-row"><strong>No active handoffs</strong><span>Create one when downstream ownership is needed.</span></div> : null}
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      {activeTab === 'recruitment' ? (
+        <section className="dashboard-grid profile-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Recruitment source</h3>
+                <p>Territory, school, partner, and event attribution for pre-application work.</p>
+              </div>
+            </div>
+            <form className="student-activity-composer" onSubmit={handleRecruitmentSubmit}>
+              <div className="student-activity-grid">
+                <label className="auth-field compact-field">
+                  <span>Territory</span>
+                  <select value={recruitmentTerritory} onChange={(event) => setRecruitmentTerritory(event.target.value)}>
+                    {territoryOptions.map((territory) => <option key={territory} value={territory}>{territory}</option>)}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Event type</span>
+                  <select value={recruitmentEventType} onChange={(event) => setRecruitmentEventType(event.target.value)}>
+                    {recruitmentEventTypes.map((eventType) => <option key={eventType} value={eventType}>{eventType}</option>)}
+                  </select>
+                </label>
+                <label className="auth-field compact-field">
+                  <span>Date</span>
+                  <input type="datetime-local" value={recruitmentEventAt} onChange={(event) => setRecruitmentEventAt(event.target.value)} />
+                </label>
+              </div>
+              <label className="auth-field">
+                <span>School / partner</span>
+                <input value={recruitmentSchool} onChange={(event) => setRecruitmentSchool(event.target.value)} placeholder="High school, community college, employer, or partner" />
+              </label>
+              <label className="auth-field">
+                <span>Event name</span>
+                <input value={recruitmentEventName} onChange={(event) => setRecruitmentEventName(event.target.value)} placeholder="Spring transfer fair, open house, webinar..." />
+              </label>
+              <label className="auth-field">
+                <span>Notes</span>
+                <textarea value={recruitmentNotes} onChange={(event) => setRecruitmentNotes(event.target.value)} placeholder="Attribution details, counselor travel notes, or student follow-up context." />
+              </label>
+              {recruitmentError ? <p className="auth-error">{recruitmentError}</p> : null}
+              {recruitmentSuccess ? <p className="auth-success">{recruitmentSuccess}</p> : null}
+              <div className="password-actions">
+                <button type="submit" className="primary-button" disabled={isSavingRecruitmentEvent}>
+                  {isSavingRecruitmentEvent ? 'Logging...' : 'Log recruitment activity'}
+                </button>
+              </div>
+            </form>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Recruitment history</h3>
+                <p>Events and source attribution tied to this student.</p>
+              </div>
+              <span className="badge neutral-badge">{recruitmentEvents.length}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>Current territory</strong><span>{student.territory || recruitmentTerritory}</span></div>
+              <div className="stack-row"><strong>Source school</strong><span>{student.sourceSchool || student.partnerSchool || recruitmentSchool || 'Not set'}</span></div>
+              {recruitmentEvents.map((event) => (
+                <div key={event.id} className="stack-row">
+                  <strong>{event.eventName || event.title}</strong>
+                  <span>{event.eventType || 'Recruitment event'} - {event.territory || 'No territory'} - {formatTimelineTime(event.occurredAt)}</span>
+                </div>
+              ))}
+              {!recruitmentEvents.length ? <div className="stack-row"><strong>No recruitment events</strong><span>Log an event to connect this student to a source, territory, or partner.</span></div> : null}
+            </div>
+          </article>
         </section>
       ) : null}
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
+import { useStudentRecords } from '../context/StudentRecordsContext'
 import { getApiErrorMessage, meltQueueUrl, normalizeItems, toMeltCard } from '../lib/operationsApi'
 import useDebouncedValue from '../lib/useDebouncedValue'
 
@@ -21,8 +22,34 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date)
 }
 
+function buildFallbackMeltItems(students) {
+  return (Array.isArray(students) ? students : [])
+    .filter((student) => {
+      const stage = String(student.stage || '').toLowerCase()
+      return stage.includes('deposited') || stage.includes('committed') || stage.includes('registered')
+    })
+    .map((student) => {
+      const milestones = Array.isArray(student.postAdmitMilestones) ? student.postAdmitMilestones : []
+      const missingMilestones = milestones
+        .filter((milestone) => milestone.status === 'Blocked' || milestone.status === 'Not started' || milestone.status === 'In progress')
+        .map((milestone) => milestone.label || milestone.id)
+      return {
+        id: `melt-${student.id}`,
+        studentId: student.id,
+        studentName: student.name,
+        program: student.program || student.degreeProgram || 'Program pending',
+        meltRisk: Math.max(0, 100 - Math.round(Number(student.depositLikelihood || student.fitScore || 50))),
+        depositDate: student.depositDate || student.updatedAt || '',
+        owner: { name: student.advisor || 'Unassigned' },
+        missingMilestones,
+        lastOutreachAt: student.lastContactedAt || student.updatedAt || '',
+      }
+    })
+}
+
 export default function DepositMeltPage() {
   const { session, fetchWithTenantAuth } = useAuth()
+  const { students } = useStudentRecords()
   const [activeView, setActiveView] = useState('at_risk')
   const [query, setQuery] = useState('')
   const [items, setItems] = useState([])
@@ -50,12 +77,12 @@ export default function DepositMeltPage() {
 
       setItems(normalizeItems(payload, ['melt']).map(toMeltCard))
     } catch (nextError) {
-      setItems([])
+      setItems(buildFallbackMeltItems(students))
       setError(nextError.message || 'Unable to load melt watch.')
     } finally {
       setIsLoading(false)
     }
-  }, [activeView, debouncedQuery, fetchWithTenantAuth, session])
+  }, [activeView, debouncedQuery, fetchWithTenantAuth, session, students])
 
   useEffect(() => {
     loadMelt()

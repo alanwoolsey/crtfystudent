@@ -68,12 +68,6 @@ const navItems = [
     anyAccess: [{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }],
   },
   {
-    to: '/prospects',
-    label: 'Prospect Portal',
-    icon: Sparkles,
-    anyAccess: [{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }],
-  },
-  {
     to: '/students',
     label: 'Student 360',
     icon: GraduationCap,
@@ -126,6 +120,12 @@ const navItems = [
     label: 'Integrations',
     icon: Cable,
     access: { permissions: ['manage_integrations'] },
+  },
+  {
+    to: '/prospects',
+    label: 'Portals',
+    icon: Sparkles,
+    anyAccess: [{ permissions: ['view_dashboards'] }, { permissions: ['view_student_360'] }],
   },
   {
     to: '/reporting',
@@ -193,7 +193,7 @@ export default function App() {
     if (location.pathname.startsWith('/admin')) return 'Admin'
     if (location.pathname.startsWith('/platform')) return 'Platform'
     if (location.pathname.startsWith('/profile')) return 'User Profile'
-    if (location.pathname.startsWith('/prospects')) return 'Prospect Portal'
+    if (location.pathname.startsWith('/prospects')) return 'Portals'
     return "Today's Work"
   }, [location.pathname])
 

@@ -141,6 +141,10 @@ export function AuthProvider({ children }) {
     persistAuthState(nextSession, nextChallenge, nextCurrentUser)
   }, [])
 
+  const expireSession = useCallback(() => {
+    applyAuthState(null, null, null)
+  }, [applyAuthState])
+
   const login = useCallback(async ({ username, password }) => {
     const response = await fetch(loginUrl, {
       method: 'POST',
@@ -208,10 +212,14 @@ export function AuthProvider({ children }) {
     })
     const payload = await parseResponse(response)
 
+    if (response.status === 401) {
+      expireSession()
+    }
+
     if (!response.ok) throw new Error(getAuthErrorMessage(response.status, payload))
 
     return payload
-  }, [session])
+  }, [expireSession, session])
 
   const fetchWithTenantAuth = useCallback(async (url, options = {}, attempt = 0) => {
     if (!session?.access_token || !session?.tenant_id) {
@@ -233,8 +241,12 @@ export function AuthProvider({ children }) {
       return fetchWithTenantAuth(url, options, attempt + 1)
     }
 
+    if (response.status === 401) {
+      expireSession()
+    }
+
     return response
-  }, [session])
+  }, [expireSession, session])
 
   const logout = useCallback(() => {
     applyAuthState(null, null, null)
@@ -257,6 +269,11 @@ export function AuthProvider({ children }) {
       })
       const payload = await parseResponse(response)
 
+      if (response.status === 401) {
+        expireSession()
+        return null
+      }
+
       if (!response.ok) {
         throw new Error(payload?.detail || payload?.message || 'Unable to load current user.')
       }
@@ -277,7 +294,7 @@ export function AuthProvider({ children }) {
     } finally {
       setIsBootstrappingAuth(false)
     }
-  }, [pendingChallenge, session])
+  }, [expireSession, pendingChallenge, session])
 
   useEffect(() => {
     if (!session?.access_token || !session?.tenant_id) {

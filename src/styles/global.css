@@ -593,6 +593,7 @@ button { cursor: pointer; }
 .stats-grid, .dashboard-grid.two-up, .dashboard-grid.four-up, .profile-grid, .student-grid, .value-grid, .work-section-grid { display: grid; gap: 18px; }
 .stats-grid { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .dashboard-grid.two-up, .profile-grid, .value-grid.two-up, .work-section-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.dashboard-grid.three-up { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .dashboard-grid.four-up { grid-template-columns: repeat(4, minmax(0,1fr)); }
 .value-grid.three-up { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .student-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -653,6 +654,74 @@ button { cursor: pointer; }
 }
 .todays-insight-grid.three-up {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.counselor-workbench-panel {
+  display: grid;
+  gap: 18px;
+}
+.counselor-bucket-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 10px;
+}
+.counselor-bucket-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,0.78);
+  text-align: left;
+  display: grid;
+  gap: 6px;
+}
+.counselor-bucket-card.active {
+  border-color: #9db2ff;
+  background: var(--indigo-soft);
+}
+.counselor-bucket-card span {
+  color: var(--text);
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+.counselor-bucket-card strong {
+  font-size: 1.45rem;
+}
+.counselor-bucket-card small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+.counselor-bucket-header {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+.counselor-followup-list {
+  display: grid;
+  gap: 10px;
+}
+.counselor-followup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(220px, 0.9fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.76);
+}
+.counselor-followup-row h4 {
+  margin: 0 0 4px;
+}
+.counselor-followup-row p {
+  margin: 0;
+  color: var(--muted);
+}
+.counselor-followup-meta {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.counselor-action-modal {
+  width: min(680px, 100%);
 }
 .today-filter-bar {
   align-items: end;
@@ -1044,6 +1113,95 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .back-link { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .profile-hero { display: grid; gap: 18px; }
 .detail-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.equivalency-card {
+  height: 532px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: hidden;
+}
+.equivalency-card .panel-header {
+  flex-shrink: 0;
+}
+.equivalency-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.equivalency-card .panel-header .secondary-button {
+  white-space: nowrap;
+}
+.equivalency-credit-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
+  gap: 8px;
+  min-width: 220px;
+}
+.equivalency-credit-summary div {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.78);
+}
+.equivalency-credit-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+.equivalency-credit-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 1rem;
+}
+.equivalency-card > div:last-child {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+}
+.equivalency-table-wrap {
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.72);
+}
+.equivalency-table-wrap table {
+  min-width: 860px;
+}
+.equivalency-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fbff;
+}
+.profile-program-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.profile-program-field > span {
+  font-weight: 700;
+  color: var(--text);
+}
+.profile-program-field select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: rgba(255,255,255,0.92);
+  color: var(--text);
+  outline: none;
+}
+.profile-program-field select:focus {
+  border-color: var(--indigo);
+  box-shadow: 0 0 0 3px rgba(91,124,250,0.12);
+}
 .check-row {
   display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 16px; background: #f8fbff; border: 1px solid var(--border);
 }
@@ -1203,6 +1361,91 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   border: 1px solid var(--border); border-radius: 18px; padding: 16px; background: rgba(255,255,255,0.82);
 }
 .timeline-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.82rem; }
+.student-activity-composer {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: rgba(255,255,255,0.78);
+}
+.student-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.student-activity-composer .auth-field textarea {
+  min-height: 92px;
+}
+.outreach-composer-panel,
+.outreach-history-panel {
+  align-self: start;
+}
+.outreach-composer .auth-field textarea {
+  min-height: 220px;
+}
+.communication-history-list {
+  display: grid;
+  gap: 12px;
+  max-height: 430px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.communication-history-row {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255,255,255,0.82);
+}
+.communication-history-row h4 {
+  margin: 0 0 6px;
+}
+.communication-history-row p {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+.milestone-list {
+  display: grid;
+  gap: 12px;
+  max-height: 680px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.milestone-row {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.2fr) minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(120px, 0.7fr) minmax(130px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255,255,255,0.82);
+}
+.milestone-row h4 {
+  margin: 0 0 4px;
+}
+.milestone-row p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+.handoff-stack-row {
+  align-items: start;
+}
+.handoff-stack-row small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+.compact-stack-list {
+  gap: 10px;
+}
+.reporting-mini-table .mini-table-head,
+.reporting-mini-table .mini-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 90px;
+}
 .mini-table { display: grid; gap: 8px; margin-top: 16px; }
 .mini-table-head { color: var(--muted); font-size: 0.82rem; }
 .academic-term-table .mini-table-head,
@@ -1451,7 +1694,7 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1200px) {
-  .stats-grid, .value-grid.three-up, .student-grid, .profile-grid, .dashboard-grid.two-up, .dashboard-grid.four-up, .value-grid.two-up, .portal-hero, .decision-hero, .decision-detail-grid, .decision-actions-grid, .work-section-grid, .todays-insight-grid, .todays-insight-grid.three-up, .transcript-review-grid { grid-template-columns: 1fr; }
+  .stats-grid, .value-grid.three-up, .student-grid, .profile-grid, .dashboard-grid.two-up, .dashboard-grid.three-up, .dashboard-grid.four-up, .value-grid.two-up, .portal-hero, .decision-hero, .decision-detail-grid, .decision-actions-grid, .work-section-grid, .todays-insight-grid, .todays-insight-grid.three-up, .transcript-review-grid, .counselor-bucket-grid, .counselor-followup-row, .student-activity-grid, .milestone-row { grid-template-columns: 1fr; }
   .main-layout { grid-template-columns: 1fr; }
   .metric-cluster, .profile-metrics, .detail-grid, .work-item-meta, .admin-user-meta, .admin-scope-grid, .admin-form-grid, .admin-check-grid, .student-info-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .topbar-main { grid-template-columns: 1fr; }
