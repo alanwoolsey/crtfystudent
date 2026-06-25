@@ -64,7 +64,14 @@ export function normalizeWorkItems(payload) {
 }
 
 export function normalizeTodayWorkItems(payload) {
-  const items = Array.isArray(payload?.items) ? payload.items : []
+  const source = payload?.board && typeof payload.board === 'object' ? payload.board : payload
+  const items = Array.isArray(source?.items)
+    ? source.items
+    : Array.isArray(source?.groups)
+      ? source.groups.flatMap((group) => Array.isArray(group?.items) ? group.items : [])
+      : Array.isArray(source?.buckets)
+        ? source.buckets.flatMap((bucket) => Array.isArray(bucket?.items) ? bucket.items : [])
+        : []
 
   return items.map((item) => ({
     ...item,
@@ -93,12 +100,17 @@ export function normalizeTodayWorkItems(payload) {
 
 export function normalizeTodayBoardGroups(payload) {
   const source = payload?.board && typeof payload.board === 'object' ? payload.board : payload
-  const groups = Array.isArray(source?.groups) ? source.groups : []
+  const groups = Array.isArray(source?.groups)
+    ? source.groups
+    : Array.isArray(source?.buckets)
+      ? source.buckets
+      : []
 
   return groups.map((group) => ({
     key: group?.key || 'group',
     label: group?.label || 'Work group',
     total: Number(group?.total) || 0,
+    meaning: group?.meaning || '',
     routeHint: group?.routeHint && typeof group.routeHint === 'object'
       ? {
           nextAgent: group.routeHint.nextAgent || '',

@@ -254,11 +254,15 @@ export default function TodaysWorkPage() {
       if (todayResponse.ok) {
         items = sortWorkItems(normalizeTodayWorkItems(todayPayload))
         summary = buildWorkSummary(items)
+        const initialBoardGroups = normalizeTodayBoardGroups(todayPayload).map((group) => ({
+          ...group,
+          items: sortWorkItems(group.items),
+        }))
 
         setState({
           summary,
           items,
-          boardGroups: [],
+          boardGroups: initialBoardGroups,
           isLoading: false,
           hasLoaded: true,
           error: '',
@@ -336,7 +340,7 @@ export default function TodaysWorkPage() {
   const liveBoardTabs = useMemo(() => state.boardGroups.map((group) => ({
     key: group.key,
     label: group.label,
-    subtitle: `Backend-grouped queue bucket with ${group.total || group.items.length} student${(group.total || group.items.length) === 1 ? '' : 's'}.`,
+    subtitle: group.meaning || `Backend-grouped queue bucket with ${group.total || group.items.length} student${(group.total || group.items.length) === 1 ? '' : 's'}.`,
     routeHint: group.routeHint,
     items: group.items,
   })), [state.boardGroups])
