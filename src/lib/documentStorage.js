@@ -68,7 +68,7 @@ export async function uploadStoredDocument(file, options = {}) {
 
   const response = await fetch(`${crtfyDocumentsBaseUrl}/api/intake/files`, {
     method: 'POST',
-    headers: buildDocumentStorageHeaders({ department }),
+    headers: buildDocumentStorageHeaders({ tenantId: options.tenantId, department }),
     body: formData,
   })
   const payload = await parseDocumentStorageResponse(response)
@@ -84,6 +84,7 @@ export async function uploadStoredDocument(file, options = {}) {
     provider: activeDocumentStorageProvider.id,
     documentId,
     contentUrl: getStoredDocumentContentLocation(payload),
+    tenantId: options.tenantId || 'demo',
     documentType,
     department,
     payload,

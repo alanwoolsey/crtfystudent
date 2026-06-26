@@ -496,6 +496,7 @@ export function StudentRecordsProvider({ children }) {
       personId: options.personId || options.crtfyDocumentsPersonId,
       tags: options.tags,
       notes: options.notes,
+      tenantId: session.tenant_id,
     })
 
     onStateChange({
@@ -513,6 +514,7 @@ export function StudentRecordsProvider({ children }) {
     formData.append('storage_provider', storedDocument.provider)
     formData.append('document_id', storedDocument.documentId)
     formData.append('crtfy_documents_document_id', storedDocument.documentId)
+    formData.append('crtfy_documents_tenant_id', storedDocument.tenantId || session.tenant_id || 'demo')
     if (storedDocument.contentUrl) formData.append('content_url', storedDocument.contentUrl)
     formData.append('skip_storage', 'true')
     formData.append('source', 'crtfy_student')
