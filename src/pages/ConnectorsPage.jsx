@@ -3,6 +3,7 @@ import SectionHeader from '../components/SectionHeader'
 import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { connectorCards } from '../data/mockData'
+import { activeDocumentStorageProvider } from '../lib/documentStorage'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const connectorsUrl = `${apiBaseUrl}/api/v1/connectors`
@@ -32,6 +33,16 @@ function normalizeConnectors(payload) {
   }))
 }
 
+function withActiveDocumentStorageConnector(items) {
+  const connectors = Array.isArray(items) ? items : []
+  const hasDocumentStorage = connectors.some((item) => {
+    const value = `${item.id || ''} ${item.name || ''}`.toLowerCase()
+    return value.includes('crtfy_documents') || value.includes('crtfy documents')
+  })
+
+  return hasDocumentStorage ? connectors : [activeDocumentStorageProvider, ...connectors]
+}
+
 export default function ConnectorsPage() {
   const { session, fetchWithTenantAuth } = useAuth()
   const [items, setItems] = useState(connectorCards)
@@ -54,10 +65,10 @@ export default function ConnectorsPage() {
       }
 
       const nextItems = normalizeConnectors(payload)
-      setItems(nextItems.length ? nextItems : connectorCards)
+      setItems(withActiveDocumentStorageConnector(nextItems.length ? nextItems : connectorCards))
       setMode(nextItems.length ? 'live' : 'derived')
     } catch (nextError) {
-      setItems(connectorCards)
+      setItems(withActiveDocumentStorageConnector(connectorCards))
       setMode('derived')
       setError(nextError.message || 'Unable to load connectors.')
     } finally {

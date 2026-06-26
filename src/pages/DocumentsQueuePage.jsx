@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import { useAuth } from '../context/AuthContext'
+import { uploadStoredDocument } from '../lib/documentStorage'
 import {
   getAgentRunActionsUrl,
   documentExceptionsUrl,
@@ -493,10 +494,21 @@ export default function DocumentsQueuePage() {
     })
 
     try {
+      const storedDocument = await uploadStoredDocument(file, {
+        title: file.name,
+        documentType: 'Transcript',
+        notes: `Replacement upload for document ${documentId}`,
+        tags: ['reprocess', documentId],
+      })
       const formData = new FormData()
       formData.append('file', file, file.name)
       formData.append('document_type', 'auto')
       formData.append('use_bedrock', 'true')
+      formData.append('storage_provider', storedDocument.provider)
+      formData.append('document_id', storedDocument.documentId)
+      formData.append('crtfy_documents_document_id', storedDocument.documentId)
+      formData.append('skip_storage', 'true')
+      formData.append('source', 'crtfy_student')
 
       const uploadResponse = await fetchWithTenantAuth(getDocumentReprocessUploadUrl(documentId), {
         method: 'POST',

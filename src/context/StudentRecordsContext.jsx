@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
 import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS, normalizePipelineStatus } from '../lib/admissionsWorkflow'
+import { uploadStoredDocument } from '../lib/documentStorage'
 import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
 const StudentRecordsContext = createContext(null)
@@ -195,7 +196,7 @@ function getLocalPdfUrl(file) {
   return URL.createObjectURL(file)
 }
 
-function mapParsedTranscript(parsed, file) {
+function mapParsedTranscript(parsed, file, storedDocument = null) {
   const demographic = parsed.demographic || {}
   const courses = parsed.courses || []
   const metadata = parsed.metadata || {}
@@ -207,14 +208,17 @@ function mapParsedTranscript(parsed, file) {
   const creditsEarned = formatNumber(parsed.grandGPA?.unitsEarned || demographic.totalCreditsEarned, 0)
   const typeLabel = metadata.document_type?.replaceAll('_', ' ') || 'transcript'
   const isFraudulent = Boolean(parsed.isFraudulent)
-  const documentUploadId = parsed.documentUploadId || parsed.document_id || parsed.documentId || metadata.externalExtraction?.documentUploadId || parsed.externalExtraction?.documentUploadId || ''
+  const documentUploadId = storedDocument?.documentId || parsed.crtfyDocumentId || parsed.documentUploadId || parsed.document_id || parsed.documentId || metadata.externalExtraction?.documentUploadId || parsed.externalExtraction?.documentUploadId || ''
   const transcript = {
     id: parsed.documentId,
     source: file.name,
-    documentUrl: parsed.documentUrl || parsed.pdfUrl || parsed.fileUrl || parsed.sourceUrl || getLocalPdfUrl(file),
+    documentUrl: storedDocument?.documentId ? '' : parsed.documentUrl || parsed.pdfUrl || parsed.fileUrl || parsed.sourceUrl || getLocalPdfUrl(file),
     transcriptId: parsed.transcriptId || metadata.externalExtraction?.transcriptId || parsed.externalExtraction?.transcriptId || '',
     documentUploadId,
     documentId: documentUploadId,
+    documentStorageProvider: storedDocument?.provider || parsed.documentStorageProvider || '',
+    documentStorageDepartment: storedDocument?.department || parsed.documentStorageDepartment || '',
+    documentStorageType: storedDocument?.documentType || parsed.documentStorageType || '',
     institution: institutionName,
     type: typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1),
     uploadedAt: new Date().toISOString(),
@@ -228,7 +232,14 @@ function mapParsedTranscript(parsed, file) {
       : `Transcript parsed from ${institutionName}. Outcome packet drafted with ${courses.length} extracted courses.`,
     steps: buildTranscriptSteps(parsed.audit),
     courses,
-    rawDocument: parsed,
+    rawDocument: storedDocument ? {
+      ...parsed,
+      crtfyDocumentId: storedDocument.documentId,
+      documentStorageProvider: storedDocument.provider,
+      documentStorageDepartment: storedDocument.department,
+      documentStorageType: storedDocument.documentType,
+      documentStorage: storedDocument,
+    } : parsed,
   }
 
   return {
@@ -412,7 +423,7 @@ export function StudentRecordsProvider({ children }) {
   const [students, setStudents] = useState([])
   const [isLoadingStudents, setIsLoadingStudents] = useState(false)
   const [studentsError, setStudentsError] = useState('')
-  const { session, buildTenantAuthHeaders, fetchWithTenantAuth } = useAuth()
+  const { session, fetchWithTenantAuth } = useAuth()
 
   const loadStudents = useCallback(async (query = '') => {
     if (!session?.access_token || !session?.tenant_id) {
@@ -470,7 +481,25 @@ export function StudentRecordsProvider({ children }) {
     onStateChange({
       state: 'uploading',
       transcriptId: null,
-      message: `Uploading ${file.name}`,
+      message: `Storing ${file.name} in crtfy Documents`,
+      error: '',
+    })
+
+    const documentType = options.documentType || options.documentCategory || 'Transcript'
+    const storedDocument = await uploadStoredDocument(file, {
+      title: options.title || file.name,
+      documentType,
+      isFinancialAid: options.isFinancialAid,
+      personId: options.personId || options.crtfyDocumentsPersonId,
+      tags: options.tags,
+      notes: options.notes,
+    })
+
+    onStateChange({
+      state: 'uploading',
+      transcriptId: null,
+      documentUploadId: storedDocument.documentId,
+      message: `Stored in crtfy Documents. Starting extraction for ${file.name}`,
       error: '',
     })
 
@@ -478,6 +507,11 @@ export function StudentRecordsProvider({ children }) {
     formData.append('file', file, file.name)
     formData.append('document_type', 'auto')
     formData.append('use_bedrock', 'true')
+    formData.append('storage_provider', storedDocument.provider)
+    formData.append('document_id', storedDocument.documentId)
+    formData.append('crtfy_documents_document_id', storedDocument.documentId)
+    formData.append('skip_storage', 'true')
+    formData.append('source', 'crtfy_student')
 
     const uploadResponse = await fetchWithTenantAuth(transcriptUploadUrl, {
       method: 'POST',
@@ -490,6 +524,7 @@ export function StudentRecordsProvider({ children }) {
       onStateChange({
         state: 'failed',
         transcriptId: uploadPayload?.transcriptId || null,
+        documentUploadId: storedDocument.documentId,
         message: errorMessage,
         error: errorMessage,
       })
@@ -506,6 +541,7 @@ export function StudentRecordsProvider({ children }) {
         batchId,
         mode: 'batch',
         message: `Processing batch ${batchId}`,
+        documentUploadId: storedDocument.documentId,
         batchItems: normalizeBatchItems(uploadPayload?.items || []),
         batchProgress: buildBatchProgress(uploadPayload),
         error: '',
@@ -530,6 +566,7 @@ export function StudentRecordsProvider({ children }) {
             batchId,
             mode: 'batch',
             message: errorMessage,
+            documentUploadId: storedDocument.documentId,
             batchItems: normalizeBatchItems(statusPayload?.items || []),
             batchProgress: buildBatchProgress(statusPayload),
             error: errorMessage,
@@ -562,6 +599,7 @@ export function StudentRecordsProvider({ children }) {
               batchId,
               mode: 'batch',
               message: `Processing batch ${batchId}`,
+              documentUploadId: storedDocument.documentId,
               batchItems: batchItems.map((batchItem) => batchItem.transcriptId === item.transcriptId ? { ...batchItem, ...batchItemOverrides.get(item.transcriptId) } : batchItem),
               batchProgress: buildBatchProgress(statusPayload),
               error: '',
@@ -583,6 +621,7 @@ export function StudentRecordsProvider({ children }) {
               batchId,
               mode: 'batch',
               message: `Processing batch ${batchId}`,
+              documentUploadId: storedDocument.documentId,
               batchItems: batchItems.map((batchItem) => batchItem.transcriptId === item.transcriptId ? { ...batchItem, ...batchItemOverrides.get(item.transcriptId) } : batchItem),
               batchProgress: buildBatchProgress(statusPayload),
               error: '',
@@ -595,11 +634,12 @@ export function StudentRecordsProvider({ children }) {
             transcriptId: item.transcriptId,
             filename: item.filename,
             parsed,
+            documentUploadId: storedDocument.documentId,
           })
 
           if (!isZipUpload) continue
 
-          const mapped = mapParsedTranscript(parsed, { name: item.filename })
+          const mapped = mapParsedTranscript(parsed, { name: item.filename }, storedDocument)
           setStudents((current) => mergeStudentRecord(current, mapped))
         }
 
@@ -609,6 +649,7 @@ export function StudentRecordsProvider({ children }) {
           batchId,
           mode: 'batch',
           message: `Processed ${Number(statusPayload?.completedFiles) || 0} of ${Number(statusPayload?.totalFiles) || batchItems.length || 0} files`,
+          documentUploadId: storedDocument.documentId,
           batchItems,
           batchProgress: buildBatchProgress(statusPayload),
           error: '',
@@ -624,6 +665,7 @@ export function StudentRecordsProvider({ children }) {
           return {
             batchId,
             transcriptId: null,
+            documentUploadId: storedDocument.documentId,
             destination: 'students-list',
             isZipUpload,
             results: batchResults,
@@ -640,7 +682,7 @@ export function StudentRecordsProvider({ children }) {
 
     if (!transcriptId) {
       const errorMessage = 'Upload started but no transcript or batch id was returned.'
-      onStateChange({ state: 'failed', transcriptId: null, batchId: null, message: errorMessage, error: errorMessage })
+      onStateChange({ state: 'failed', transcriptId: null, batchId: null, documentUploadId: storedDocument.documentId, message: errorMessage, error: errorMessage })
       throw new Error(errorMessage)
     }
 
@@ -650,6 +692,7 @@ export function StudentRecordsProvider({ children }) {
       batchId: null,
       mode: 'single',
       message: `Processing transcript ${transcriptId}`,
+      documentUploadId: storedDocument.documentId,
       error: '',
     })
 
@@ -667,6 +710,7 @@ export function StudentRecordsProvider({ children }) {
           batchId: null,
           mode: 'single',
           message: errorMessage,
+          documentUploadId: storedDocument.documentId,
           error: errorMessage,
         })
         throw new Error(errorMessage)
@@ -680,6 +724,7 @@ export function StudentRecordsProvider({ children }) {
           batchId: null,
           mode: 'single',
           message: errorMessage,
+          documentUploadId: storedDocument.documentId,
           error: errorMessage,
         })
         throw new Error(errorMessage)
@@ -693,6 +738,7 @@ export function StudentRecordsProvider({ children }) {
         batchId: null,
         mode: 'single',
         message: `Processing transcript ${transcriptId}`,
+        documentUploadId: storedDocument.documentId,
         error: '',
       })
     }
@@ -703,6 +749,7 @@ export function StudentRecordsProvider({ children }) {
       batchId: null,
       mode: 'single',
       message: `Fetching results for ${transcriptId}`,
+      documentUploadId: storedDocument.documentId,
       error: '',
     })
 
@@ -717,6 +764,7 @@ export function StudentRecordsProvider({ children }) {
         batchId: null,
         mode: 'single',
         message: errorMessage,
+        documentUploadId: storedDocument.documentId,
         error: errorMessage,
       })
       throw new Error(errorMessage)
@@ -730,6 +778,7 @@ export function StudentRecordsProvider({ children }) {
         batchId: null,
         mode: 'single',
         message: validationError,
+        documentUploadId: storedDocument.documentId,
         error: validationError,
       })
       throw new Error(validationError)
@@ -742,12 +791,13 @@ export function StudentRecordsProvider({ children }) {
         studentId: null,
         transcriptId,
         batchId: null,
+        documentUploadId: storedDocument.documentId,
         destination: 'students-list',
         isZipUpload: true,
       }
     }
 
-    const mapped = mapParsedTranscript(parsed, file)
+    const mapped = mapParsedTranscript(parsed, file, storedDocument)
 
     setStudents((current) => mergeStudentRecord(current, mapped))
 
@@ -756,10 +806,11 @@ export function StudentRecordsProvider({ children }) {
       studentId: mapped.studentId,
       transcriptId,
       batchId: null,
+      documentUploadId: storedDocument.documentId,
       destination: 'student-profile',
       isZipUpload: false,
     }
-  }, [buildTenantAuthHeaders, fetchWithTenantAuth, loadStudents, session])
+  }, [fetchWithTenantAuth, loadStudents, session])
 
   const loadStudentChecklist = useCallback(async (studentId) => {
     if (!studentId || !session?.access_token || !session?.tenant_id) return []

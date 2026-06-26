@@ -14,6 +14,7 @@ import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
+import { activeDocumentStorageProvider, fetchStoredDocumentContent } from '../lib/documentStorage'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
@@ -510,6 +511,20 @@ function getTranscriptDocumentUrl(transcript) {
 }
 
 function getTranscriptDocumentUploadId(transcript) {
+  const storedDocumentId = getFirstValue(
+    transcript?.crtfyDocumentId,
+    transcript?.crtfy_document_id,
+    transcript?.documentId,
+    transcript?.document_id,
+    transcript?.documentStorage?.documentId,
+    transcript?.documentStorage?.document_id,
+    transcript?.rawDocument?.crtfyDocumentId,
+    transcript?.rawDocument?.crtfy_document_id,
+    transcript?.rawDocument?.documentStorage?.documentId,
+    transcript?.rawDocument?.documentStorage?.document_id,
+  )
+  if (storedDocumentId) return storedDocumentId
+
   const rawDocumentId = getFirstValue(
     transcript?.rawDocument?.documentId,
     transcript?.rawDocument?.document_id,
@@ -546,6 +561,32 @@ function getTranscriptDocumentUploadId(transcript) {
 
   if (topLevelDocumentId && uploadAlias && topLevelDocumentId !== uploadAlias) return topLevelDocumentId
   return uploadAlias
+}
+
+function getTranscriptDocumentStorageProvider(transcript) {
+  return getFirstValue(
+    transcript?.documentStorageProvider,
+    transcript?.document_storage_provider,
+    transcript?.documentStorage?.provider,
+    transcript?.document_storage?.provider,
+    transcript?.rawDocument?.documentStorageProvider,
+    transcript?.rawDocument?.document_storage_provider,
+    transcript?.rawDocument?.documentStorage?.provider,
+    transcript?.rawDocument?.document_storage?.provider,
+  )
+}
+
+function getTranscriptDocumentStorageDepartment(transcript) {
+  return getFirstValue(
+    transcript?.documentStorageDepartment,
+    transcript?.document_storage_department,
+    transcript?.documentStorage?.department,
+    transcript?.document_storage?.department,
+    transcript?.rawDocument?.documentStorageDepartment,
+    transcript?.rawDocument?.document_storage_department,
+    transcript?.rawDocument?.documentStorage?.department,
+    transcript?.rawDocument?.document_storage?.department,
+  ) || 'General'
 }
 
 function gradeToPoints(grade) {
@@ -1336,7 +1377,22 @@ export default function StudentProfilePage() {
 
       setIsLoadingDocumentViewer(true)
       try {
-        const response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${documentUploadId}/content`)
+        const storageProvider = getTranscriptDocumentStorageProvider(selectedTranscript)
+        let response = null
+
+        if (storageProvider === activeDocumentStorageProvider.id || !storageProvider) {
+          try {
+            response = await fetchStoredDocumentContent(documentUploadId, {
+              department: getTranscriptDocumentStorageDepartment(selectedTranscript),
+            })
+          } catch (error) {
+            if (storageProvider === activeDocumentStorageProvider.id) throw error
+          }
+        }
+
+        if ((!response || !response.ok) && storageProvider !== activeDocumentStorageProvider.id) {
+          response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${documentUploadId}/content`)
+        }
 
         if (!response.ok) {
           throw new Error(`Document load failed: ${response.status}`)

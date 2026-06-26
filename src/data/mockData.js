@@ -6,6 +6,13 @@ export const quickSignals = [
 
 export const connectorCards = [
   {
+    name: 'crtfy Documents',
+    status: 'Active',
+    direction: 'Outbound storage + retrieval',
+    latency: 'Real-time',
+    coverage: ['Transcript storage', 'Document viewer', 'ECM document IDs', 'Extraction handoff'],
+  },
+  {
     name: 'Ellucian Banner',
     status: 'Certified',
     direction: 'Bi-directional',
