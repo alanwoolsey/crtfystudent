@@ -182,6 +182,21 @@ function buildRecruitmentFollowUpsFromStudents(students) {
   ))
 }
 
+function mergeWorkItems(currentItems, nextItems) {
+  const merged = new Map()
+
+  ;[...(Array.isArray(currentItems) ? currentItems : []), ...(Array.isArray(nextItems) ? nextItems : [])].forEach((item) => {
+    const key = item?.id || item?.studentId
+    if (!key) return
+    merged.set(key, {
+      ...(merged.get(key) || {}),
+      ...item,
+    })
+  })
+
+  return sortWorkItems([...merged.values()])
+}
+
 const counselorActionTypes = [
   { value: 'contacted', label: 'Log contact' },
   { value: 'follow_up', label: 'Set follow-up' },
@@ -571,17 +586,19 @@ export default function TodaysWorkPage() {
       return
     }
 
-    const items = sortWorkItems(groups.flatMap((group) => group.items))
-    setState((current) => ({
-      ...current,
-      summary: buildWorkSummary(items),
-      items,
-      boardGroups: groups,
-      isLoading: false,
-      hasLoaded: true,
-      error: '',
-      source: 'live',
-    }))
+    setState((current) => {
+      const items = mergeWorkItems(current.items, groups.flatMap((group) => group.items))
+      return {
+        ...current,
+        summary: buildWorkSummary(items),
+        items,
+        boardGroups: groups,
+        isLoading: false,
+        hasLoaded: true,
+        error: '',
+        source: 'live',
+      }
+    })
     setOrchestrationRun(payload?.run || null)
     setActionDetail(payload?.run?.result?.message || fallbackDetail)
   }
