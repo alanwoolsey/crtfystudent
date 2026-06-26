@@ -4,6 +4,7 @@ import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useAuth } from '../context/AuthContext'
 import { connectorCards } from '../data/mockData'
 import { activeDocumentStorageProvider } from '../lib/documentStorage'
+import { activeGovernedAiProvider } from '../lib/governedAi'
 
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const connectorsUrl = `${apiBaseUrl}/api/v1/connectors`
@@ -33,14 +34,21 @@ function normalizeConnectors(payload) {
   }))
 }
 
-function withActiveDocumentStorageConnector(items) {
+const requiredPlatformConnectors = [
+  activeGovernedAiProvider,
+  activeDocumentStorageProvider,
+]
+
+function withRequiredPlatformConnectors(items) {
   const connectors = Array.isArray(items) ? items : []
-  const hasDocumentStorage = connectors.some((item) => {
-    const value = `${item.id || ''} ${item.name || ''}`.toLowerCase()
-    return value.includes('crtfy_documents') || value.includes('crtfy documents')
+  const missingConnectors = requiredPlatformConnectors.filter((requiredConnector) => {
+    return !connectors.some((item) => {
+      const value = `${item.id || ''} ${item.name || ''}`.trim().toLowerCase()
+      return value.includes(requiredConnector.id) || value.includes(requiredConnector.name.toLowerCase())
+    })
   })
 
-  return hasDocumentStorage ? connectors : [activeDocumentStorageProvider, ...connectors]
+  return [...missingConnectors, ...connectors]
 }
 
 export default function ConnectorsPage() {
@@ -65,10 +73,10 @@ export default function ConnectorsPage() {
       }
 
       const nextItems = normalizeConnectors(payload)
-      setItems(withActiveDocumentStorageConnector(nextItems.length ? nextItems : connectorCards))
+      setItems(withRequiredPlatformConnectors(nextItems.length ? nextItems : connectorCards))
       setMode(nextItems.length ? 'live' : 'derived')
     } catch (nextError) {
-      setItems(withActiveDocumentStorageConnector(connectorCards))
+      setItems(withRequiredPlatformConnectors(connectorCards))
       setMode('derived')
       setError(nextError.message || 'Unable to load connectors.')
     } finally {

@@ -6,6 +6,13 @@ export const quickSignals = [
 
 export const connectorCards = [
   {
+    name: 'crtfy.ai',
+    status: 'Active',
+    direction: 'Governed AI runtime',
+    latency: 'Real-time',
+    coverage: ['Workspace assistant', 'Catalog lookup', 'Guardrails', 'Audit-aware AI actions'],
+  },
+  {
     name: 'crtfy Documents',
     status: 'Active',
     direction: 'Outbound storage + retrieval',
