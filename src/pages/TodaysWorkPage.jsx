@@ -818,28 +818,6 @@ export default function TodaysWorkPage() {
                   <p className="muted-copy">No blocker data is available yet.</p>
                 )}
               </div>
-              <div className="legend-list">
-                {blockerMix.map((item, index) => (
-                  <button
-                    key={item.name}
-                    type="button"
-                    className="legend-row chart-drilldown-row"
-                    onClick={() => {
-                      setActiveSummaryKey('')
-                      setActiveChartDrilldown({
-                        type: 'blocker',
-                        value: item.name,
-                        label: item.name,
-                        subtitle: `Students blocked by ${item.name}.`,
-                      })
-                    }}
-                  >
-                    <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
-                    <span>{item.name}</span>
-                    <strong>{item.value}</strong>
-                  </button>
-                ))}
-              </div>
             </article>
 
             <article className="panel chart-panel">
@@ -872,28 +850,6 @@ export default function TodaysWorkPage() {
                     <Area type="monotone" dataKey="count" stroke="#5b7cfa" fill="#5b7cfa22" />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="legend-list">
-                {workflowFunnel.map((item, index) => (
-                  <button
-                    key={item.step}
-                    type="button"
-                    className="legend-row chart-drilldown-row"
-                    onClick={() => {
-                      setActiveSummaryKey('')
-                      setActiveChartDrilldown({
-                        type: 'funnel',
-                        value: item.step,
-                        label: item.step,
-                        subtitle: 'Students in this operational section.',
-                      })
-                    }}
-                  >
-                    <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
-                    <span>{item.step}</span>
-                    <strong>{item.count}</strong>
-                  </button>
-                ))}
               </div>
             </article>
 
@@ -939,24 +895,11 @@ export default function TodaysWorkPage() {
               </div>
               <div className="legend-list">
                 {priorityMix.map((item, index) => (
-                  <button
-                    key={item.name}
-                    type="button"
-                    className="legend-row chart-drilldown-row"
-                    onClick={() => {
-                      setActiveSummaryKey('')
-                      setActiveChartDrilldown({
-                        type: 'priority',
-                        value: item.name,
-                        label: `${item.name} priority`,
-                        subtitle: `Students currently marked ${String(item.name).toLowerCase()} priority.`,
-                      })
-                    }}
-                  >
+                  <div key={item.name} className="legend-row">
                     <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
                     <span>{item.name}</span>
                     <strong>{item.value}</strong>
-                  </button>
+                  </div>
                 ))}
               </div>
             </article>

@@ -637,21 +637,6 @@ button { cursor: pointer; }
   display: flex; justify-content: space-between; gap: 14px; align-items: start;
 }
 .legend-dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; }
-.chart-drilldown-row {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  padding: 0;
-}
-.chart-drilldown-row:hover,
-.chart-drilldown-row:focus-visible {
-  color: var(--brand);
-  outline: none;
-}
 .value-card, .connector-card { display: grid; gap: 8px; }
 .student-card { padding: 20px; display: grid; gap: 14px; }
 .student-summary { margin: 0; }
