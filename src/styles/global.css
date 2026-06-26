@@ -602,6 +602,22 @@ button { cursor: pointer; }
   background: var(--panel); border: 1px solid rgba(217,226,240,0.9); border-radius: 24px; box-shadow: var(--shadow);
 }
 .stat-card { padding: 20px; display: grid; gap: 10px; }
+.clickable-stat-card {
+  width: 100%;
+  border: 1px solid rgba(217,226,240,0.9);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.clickable-stat-card:hover,
+.clickable-stat-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(91,124,250,0.45);
+  box-shadow: 0 18px 45px rgba(15,23,42,0.12);
+  outline: none;
+}
 .stat-card span { color: var(--muted); font-size: 0.92rem; }
 .stat-card strong { font-size: 2rem; }
 .stat-card p { margin: 0; }
@@ -621,6 +637,21 @@ button { cursor: pointer; }
   display: flex; justify-content: space-between; gap: 14px; align-items: start;
 }
 .legend-dot { width: 10px; height: 10px; border-radius: 999px; margin-top: 5px; }
+.chart-drilldown-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.chart-drilldown-row:hover,
+.chart-drilldown-row:focus-visible {
+  color: var(--brand);
+  outline: none;
+}
 .value-card, .connector-card { display: grid; gap: 8px; }
 .student-card { padding: 20px; display: grid; gap: 14px; }
 .student-summary { margin: 0; }
@@ -1490,6 +1521,53 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .transcript-course-modal {
   width: min(1360px, calc(100vw - 48px));
 }
+.today-summary-modal {
+  width: min(1080px, calc(100vw - 48px));
+}
+.today-summary-list {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.today-summary-row {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+}
+.today-summary-row h4,
+.today-summary-row p {
+  margin: 0;
+}
+.today-summary-row p {
+  color: var(--muted);
+}
+.today-summary-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.today-summary-detail-grid div {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  background: #f8fafc;
+  min-width: 0;
+}
+.today-summary-detail-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+.today-summary-detail-grid strong {
+  display: block;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
 .transcript-course-modal .course-modal-body table {
   min-width: 0;
 }
@@ -1697,6 +1775,7 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   .stats-grid, .value-grid.three-up, .student-grid, .profile-grid, .dashboard-grid.two-up, .dashboard-grid.three-up, .dashboard-grid.four-up, .value-grid.two-up, .portal-hero, .decision-hero, .decision-detail-grid, .decision-actions-grid, .work-section-grid, .todays-insight-grid, .todays-insight-grid.three-up, .transcript-review-grid, .counselor-bucket-grid, .counselor-followup-row, .student-activity-grid, .milestone-row { grid-template-columns: 1fr; }
   .main-layout { grid-template-columns: 1fr; }
   .metric-cluster, .profile-metrics, .detail-grid, .work-item-meta, .admin-user-meta, .admin-scope-grid, .admin-form-grid, .admin-check-grid, .student-info-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .today-summary-detail-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .topbar-main { grid-template-columns: 1fr; }
   .topbar-actions { flex-wrap: wrap; justify-content: end; }
 }
@@ -1712,6 +1791,7 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   .section-header h1 { font-size: 1.6rem; }
   .stats-grid { grid-template-columns: 1fr; }
   .metric-cluster, .profile-metrics, .detail-grid, .preview-grid, .work-item-meta, .admin-user-meta, .admin-scope-grid, .admin-form-grid, .admin-check-grid, .student-info-grid { grid-template-columns: 1fr; }
+  .today-summary-detail-grid { grid-template-columns: 1fr; }
   .card-footer-row, .panel-header, .student-card-top, .profile-top, .connector-top, .feed-top, .legend-row, .stack-row, .mini-table-row, .mini-table-head, .checklist-progress-top, .work-item-top, .work-item-heading, .work-item-actions, .admin-user-header, .admin-scope-reference-row, .documents-queue-top, .review-pane-header { flex-direction: column; }
   .auth-card { padding: 22px; }
   .auth-copy h1 { font-size: 1.6rem; }

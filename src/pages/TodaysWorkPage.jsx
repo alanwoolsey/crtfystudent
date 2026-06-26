@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import SectionHeader from '../components/SectionHeader'
 import StatCard from '../components/StatCard'
@@ -39,10 +40,10 @@ const chartColors = ['#5b7cfa', '#18b7a6', '#ffb84d', '#f06595']
 
 function toSummaryCards(summary) {
   return [
-    { label: 'Needs attention', value: summary.needsAttention || 0, delta: 'Students who need human action now', tone: 'rose' },
-    { label: 'Close to completion', value: summary.closeToCompletion || 0, delta: 'One strong touch can move these forward', tone: 'amber' },
-    { label: 'Ready for decision', value: summary.readyForDecision || 0, delta: 'Operationally ready for review', tone: 'teal' },
-    { label: 'Exceptions', value: summary.exceptions || 0, delta: 'Trust, evidence, or edge-case blockers', tone: 'indigo' },
+    { key: 'attention', label: 'Needs attention', value: summary.needsAttention || 0, delta: 'Students who need human action now', tone: 'rose' },
+    { key: 'close', label: 'Close to completion', value: summary.closeToCompletion || 0, delta: 'One strong touch can move these forward', tone: 'amber' },
+    { key: 'ready', label: 'Ready for decision', value: summary.readyForDecision || 0, delta: 'Operationally ready for review', tone: 'teal' },
+    { key: 'exceptions', label: 'Exceptions', value: summary.exceptions || 0, delta: 'Trust, evidence, or edge-case blockers', tone: 'indigo' },
   ]
 }
 
@@ -85,6 +86,7 @@ function buildPriorityMix(items) {
   }
 
   return Object.entries(priorityCounts).map(([key, value]) => ({
+    key,
     name: labelMap[key] || key,
     value,
   }))
@@ -119,6 +121,40 @@ function formatDateTime(value) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(date)
+}
+
+function getWorkItemReason(item) {
+  return item?.reasonToAct?.label || item?.readiness?.reason || item?.readiness?.label || item?.suggestedAction?.label || 'Needs review'
+}
+
+function getWorkItemNeed(item) {
+  const blockers = Array.isArray(item?.blockingItems) ? item.blockingItems.map((blocker) => blocker.label).filter(Boolean) : []
+  if (blockers.length) return blockers.join(', ')
+  return item?.nextAction || item?.suggestedAction?.label || item?.routeHint?.reason || 'Review the student record and confirm the next step.'
+}
+
+function getWorkItemBlockerLabels(item) {
+  const blockers = Array.isArray(item?.blockingItems) ? item.blockingItems.map((blocker) => blocker.label).filter(Boolean) : []
+  return blockers.length ? blockers : [item?.reasonToAct?.label || 'General follow-up']
+}
+
+function getFunnelSectionFromStep(step) {
+  const sectionMap = {
+    'Needs attention': 'attention',
+    'Close to complete': 'close',
+    'Ready for decision': 'ready',
+    Exceptions: 'exceptions',
+  }
+
+  return sectionMap[step] || ''
+}
+
+function getPriorityKeyFromLabel(label) {
+  const normalized = String(label || '').toLowerCase()
+  if (normalized === 'urgent') return 'urgent'
+  if (normalized === 'today') return 'today'
+  if (normalized === 'soon') return 'soon'
+  return normalized
 }
 
 function getItemPipelineStatus(item) {
@@ -227,6 +263,8 @@ export default function TodaysWorkPage() {
   const [counselorNextAction, setCounselorNextAction] = useState('')
   const [counselorFollowUpAt, setCounselorFollowUpAt] = useState('')
   const [isSavingCounselorAction, setIsSavingCounselorAction] = useState(false)
+  const [activeSummaryKey, setActiveSummaryKey] = useState('')
+  const [activeChartDrilldown, setActiveChartDrilldown] = useState(null)
 
   const derivedItems = useMemo(() => sortWorkItems(buildWorkItemsFromStudents(students)), [students])
   const derivedSummary = useMemo(() => buildWorkSummary(derivedItems), [derivedItems])
@@ -415,6 +453,26 @@ export default function TodaysWorkPage() {
   ]), [attentionItems, groupedItems.close, groupedItems.exceptions, groupedItems.ready])
   const workTabs = state.source === 'live' && liveBoardTabs.length ? liveBoardTabs : fallbackTabs
   const activeTab = workTabs.find((tab) => tab.key === activeWorkTab) || workTabs[0]
+  const activeSummaryCard = summaryCards.find((stat) => stat.key === activeSummaryKey) || null
+  const activeSummaryItems = activeSummaryKey ? sortWorkItems(groupedItems[activeSummaryKey] || []) : []
+  const activeChartItems = useMemo(() => {
+    if (!activeChartDrilldown) return []
+    if (activeChartDrilldown.type === 'blocker') {
+      return sortWorkItems(activeItems.filter((item) => getWorkItemBlockerLabels(item).includes(activeChartDrilldown.value)))
+    }
+    if (activeChartDrilldown.type === 'funnel') {
+      const section = getFunnelSectionFromStep(activeChartDrilldown.value)
+      return sortWorkItems(section ? groupedItems[section] || [] : [])
+    }
+    if (activeChartDrilldown.type === 'priority') {
+      const priority = getPriorityKeyFromLabel(activeChartDrilldown.value)
+      return sortWorkItems(activeItems.filter((item) => (item.priority || 'soon') === priority))
+    }
+    return []
+  }, [activeChartDrilldown, activeItems, groupedItems])
+  const activeDrilldownTitle = activeSummaryCard?.label || activeChartDrilldown?.label || ''
+  const activeDrilldownSubtitle = activeSummaryCard?.delta || activeChartDrilldown?.subtitle || ''
+  const activeDrilldownItems = activeSummaryCard ? activeSummaryItems : activeChartItems
 
   useEffect(() => {
     if (workTabs.length && !workTabs.some((tab) => tab.key === activeWorkTab)) {
@@ -709,7 +767,16 @@ export default function TodaysWorkPage() {
       ) : (
         <>
           <section className="stats-grid">
-            {summaryCards.map((stat) => <StatCard key={stat.label} stat={stat} />)}
+            {summaryCards.map((stat) => (
+              <StatCard
+                key={stat.label}
+                stat={stat}
+                onClick={() => {
+                  setActiveChartDrilldown(null)
+                  setActiveSummaryKey(stat.key)
+                }}
+              />
+            ))}
           </section>
 
           <section className="todays-insight-grid three-up">
@@ -728,12 +795,50 @@ export default function TodaysWorkPage() {
                       <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} />
                       <YAxis type="category" dataKey="name" width={120} tickLine={false} axisLine={false} />
                       <Tooltip />
-                      <Bar dataKey="value" radius={[0, 8, 8, 0]} fill="#8e7cff" />
+                      <Bar
+                        dataKey="value"
+                        radius={[0, 8, 8, 0]}
+                        fill="#8e7cff"
+                        cursor="pointer"
+                        onClick={(entry) => {
+                          const value = entry?.name || entry?.payload?.name
+                          if (!value) return
+                          setActiveSummaryKey('')
+                          setActiveChartDrilldown({
+                            type: 'blocker',
+                            value,
+                            label: value,
+                            subtitle: `Students blocked by ${value}.`,
+                          })
+                        }}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 ) : (
                   <p className="muted-copy">No blocker data is available yet.</p>
                 )}
+              </div>
+              <div className="legend-list">
+                {blockerMix.map((item, index) => (
+                  <button
+                    key={item.name}
+                    type="button"
+                    className="legend-row chart-drilldown-row"
+                    onClick={() => {
+                      setActiveSummaryKey('')
+                      setActiveChartDrilldown({
+                        type: 'blocker',
+                        value: item.name,
+                        label: item.name,
+                        subtitle: `Students blocked by ${item.name}.`,
+                      })
+                    }}
+                  >
+                    <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
+                    <span>{item.name}</span>
+                    <strong>{item.value}</strong>
+                  </button>
+                ))}
               </div>
             </article>
 
@@ -746,7 +851,20 @@ export default function TodaysWorkPage() {
               </div>
               <div className="chart-box md">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={workflowFunnel}>
+                  <AreaChart
+                    data={workflowFunnel}
+                    onClick={(entry) => {
+                      const value = entry?.activeLabel
+                      if (!value) return
+                      setActiveSummaryKey('')
+                      setActiveChartDrilldown({
+                        type: 'funnel',
+                        value,
+                        label: value,
+                        subtitle: 'Students in this operational section.',
+                      })
+                    }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="step" tickLine={false} axisLine={false} />
                     <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
@@ -754,6 +872,28 @@ export default function TodaysWorkPage() {
                     <Area type="monotone" dataKey="count" stroke="#5b7cfa" fill="#5b7cfa22" />
                   </AreaChart>
                 </ResponsiveContainer>
+              </div>
+              <div className="legend-list">
+                {workflowFunnel.map((item, index) => (
+                  <button
+                    key={item.step}
+                    type="button"
+                    className="legend-row chart-drilldown-row"
+                    onClick={() => {
+                      setActiveSummaryKey('')
+                      setActiveChartDrilldown({
+                        type: 'funnel',
+                        value: item.step,
+                        label: item.step,
+                        subtitle: 'Students in this operational section.',
+                      })
+                    }}
+                  >
+                    <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
+                    <span>{item.step}</span>
+                    <strong>{item.count}</strong>
+                  </button>
+                ))}
               </div>
             </article>
 
@@ -768,7 +908,26 @@ export default function TodaysWorkPage() {
                 {priorityMix.length ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={priorityMix} dataKey="value" nameKey="name" innerRadius={42} outerRadius={76} paddingAngle={4}>
+                      <Pie
+                        data={priorityMix}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={42}
+                        outerRadius={76}
+                        paddingAngle={4}
+                        cursor="pointer"
+                        onClick={(entry) => {
+                          const value = entry?.name || entry?.payload?.name
+                          if (!value) return
+                          setActiveSummaryKey('')
+                          setActiveChartDrilldown({
+                            type: 'priority',
+                            value,
+                            label: `${value} priority`,
+                            subtitle: `Students currently marked ${String(value).toLowerCase()} priority.`,
+                          })
+                        }}
+                      >
                         {priorityMix.map((entry, index) => <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />)}
                       </Pie>
                       <Tooltip />
@@ -780,11 +939,24 @@ export default function TodaysWorkPage() {
               </div>
               <div className="legend-list">
                 {priorityMix.map((item, index) => (
-                  <div key={item.name} className="legend-row">
+                  <button
+                    key={item.name}
+                    type="button"
+                    className="legend-row chart-drilldown-row"
+                    onClick={() => {
+                      setActiveSummaryKey('')
+                      setActiveChartDrilldown({
+                        type: 'priority',
+                        value: item.name,
+                        label: `${item.name} priority`,
+                        subtitle: `Students currently marked ${String(item.name).toLowerCase()} priority.`,
+                      })
+                    }}
+                  >
                     <span className="legend-dot" style={{ background: chartColors[index % chartColors.length] }} />
                     <span>{item.name}</span>
                     <strong>{item.value}</strong>
-                  </div>
+                  </button>
                 ))}
               </div>
             </article>
@@ -996,6 +1168,98 @@ export default function TodaysWorkPage() {
           </div>
         </>
       )}
+
+      {activeDrilldownTitle ? (
+        <div
+          className="modal-scrim"
+          onClick={() => {
+            setActiveSummaryKey('')
+            setActiveChartDrilldown(null)
+          }}
+          role="presentation"
+        >
+          <div className="modal-panel today-summary-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>{activeDrilldownTitle}</h3>
+                <p>{activeDrilldownSubtitle}</p>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={() => {
+                  setActiveSummaryKey('')
+                  setActiveChartDrilldown(null)
+                }}
+                aria-label="Close work drilldown"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="today-summary-list">
+              {activeDrilldownItems.length ? activeDrilldownItems.map((item) => (
+                <article key={`${activeSummaryKey || activeChartDrilldown?.type}-${item.id}`} className="today-summary-row">
+                  <div>
+                    <div className="work-item-heading">
+                      <h4>{item.studentName}</h4>
+                      <span className={`badge ${item.priority === 'urgent' ? 'risk-high' : item.priority === 'today' ? 'risk-medium' : 'risk-low'}`}>
+                        {item.priority || 'soon'}
+                      </span>
+                    </div>
+                    <p>{item.program || 'Program pending'}{item.institutionGoal ? ` - ${item.institutionGoal}` : ''}</p>
+                  </div>
+                  <div className="today-summary-detail-grid">
+                    <div>
+                      <span>Why</span>
+                      <strong>{getWorkItemReason(item)}</strong>
+                    </div>
+                    <div>
+                      <span>Needs</span>
+                      <strong>{getWorkItemNeed(item)}</strong>
+                    </div>
+                    <div>
+                      <span>Owner</span>
+                      <strong>{item.owner?.name || 'Unassigned'}</strong>
+                    </div>
+                    <div>
+                      <span>Follow-up</span>
+                      <strong>{formatDateTime(item.nextFollowUpAt)}</strong>
+                    </div>
+                  </div>
+                  <div className="work-item-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setActiveSummaryKey('')
+                        setActiveChartDrilldown(null)
+                        openCounselorAction(item)
+                      }}
+                    >
+                      Log / set follow-up
+                    </button>
+                    {item.studentId ? (
+                      <Link
+                        to={`/students/${item.studentId}`}
+                        className="primary-button"
+                        onClick={() => {
+                          setActiveSummaryKey('')
+                          setActiveChartDrilldown(null)
+                        }}
+                      >
+                        Open student
+                      </Link>
+                    ) : null}
+                  </div>
+                </article>
+              )) : (
+                <p className="muted-copy">No students match this drill-down.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {counselorActionItem ? (
         <div className="modal-scrim" onClick={closeCounselorAction} role="presentation">
