@@ -840,6 +840,45 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .decision-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .decision-actions-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
 .decision-inline-feedback { margin-top: 16px; display: grid; gap: 8px; }
+.decision-type-band {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(91,124,250,0.25);
+  border-radius: 18px;
+  background: #f8faff;
+  margin-bottom: 16px;
+}
+.decision-type-band span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.decision-type-band strong {
+  font-size: 1.05rem;
+}
+.decision-packet-tabs {
+  margin-bottom: -4px;
+}
+.decision-recommendation-callout {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(24,183,166,0.35);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f3fffc, #ffffff);
+  margin-bottom: 16px;
+}
+.decision-recommendation-callout h4 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.decision-recommendation-callout p {
+  margin: 0;
+  color: var(--muted);
+}
+.decision-recommendation-callout .primary-button {
+  justify-self: start;
+}
 .table-sub {
   display: inline-flex;
   align-items: center;

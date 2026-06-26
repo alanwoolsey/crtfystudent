@@ -54,6 +54,124 @@ function normalizeRationale(value) {
   return []
 }
 
+const decisionTypeConfig = {
+  admissions_decision: {
+    label: 'Admissions decision',
+    description: 'Decide whether this applicant should be admitted, denied, held, or sent back for more information.',
+    tabs: ['recommendation', 'student', 'evidence', 'trust', 'review', 'history'],
+    primaryAction: 'Approve admissions decision',
+    evidenceLabel: 'Application evidence',
+    reviewLabel: 'Final admissions action',
+  },
+  offer_release: {
+    label: 'Offer release',
+    description: 'Decide whether it is safe to send the official acceptance or offer letter.',
+    tabs: ['recommendation', 'student', 'evidence', 'trust', 'review', 'history'],
+    primaryAction: 'Approve offer release',
+    evidenceLabel: 'Offer readiness',
+    reviewLabel: 'Offer action',
+  },
+  transfer_credit_review: {
+    label: 'Transfer credit review',
+    description: 'Confirm which courses transfer and how they apply to the selected program.',
+    tabs: ['recommendation', 'student', 'evidence', 'trust', 'review', 'history'],
+    primaryAction: 'Approve transfer credit mapping',
+    evidenceLabel: 'Transcript and course evidence',
+    reviewLabel: 'Transfer credit action',
+  },
+  scholarship_review: {
+    label: 'Scholarship review',
+    description: 'Decide whether this student should receive an award estimate or financial aid handoff.',
+    tabs: ['recommendation', 'student', 'evidence', 'trust', 'review', 'history'],
+    primaryAction: 'Send to financial aid',
+    evidenceLabel: 'Scholarship eligibility evidence',
+    reviewLabel: 'Scholarship action',
+  },
+  trust_clearance: {
+    label: 'Trust clearance',
+    description: 'Decide whether document or identity trust blockers are clear enough to continue.',
+    tabs: ['recommendation', 'trust', 'evidence', 'student', 'review', 'history'],
+    primaryAction: 'Clear trust blocker',
+    evidenceLabel: 'Document evidence',
+    reviewLabel: 'Trust action',
+  },
+  readiness_review: {
+    label: 'Readiness review',
+    description: 'Decide whether the file is ready for formal review or needs more work.',
+    tabs: ['recommendation', 'evidence', 'student', 'trust', 'review', 'history'],
+    primaryAction: 'Mark ready for review',
+    evidenceLabel: 'Readiness evidence',
+    reviewLabel: 'Readiness action',
+  },
+}
+
+const defaultDecisionTypeKey = 'admissions_decision'
+
+function normalizeDecisionType(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (decisionTypeConfig[normalized]) return normalized
+  return ''
+}
+
+function inferDecisionType(detail, recommendation, artifacts) {
+  const explicit = normalizeDecisionType(
+    detail?.decisionType
+      || detail?.decision_type
+      || detail?.type
+      || detail?.packetType
+      || detail?.packet_type
+      || recommendation?.decisionType
+      || recommendation?.decision_type
+      || artifacts?.decisionType
+      || artifacts?.decision_type,
+  )
+  if (explicit) return explicit
+
+  const haystack = [
+    detail?.queue,
+    detail?.readiness,
+    detail?.program?.name,
+    recommendation?.reason,
+    recommendation?.nextAction,
+    recommendation?.next_action,
+    artifacts?.recommendationReason,
+    artifacts?.readinessReason,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (haystack.includes('scholarship') || haystack.includes('financial aid') || haystack.includes('fafsa')) return 'scholarship_review'
+  if (haystack.includes('trust') || haystack.includes('fraud') || haystack.includes('quarantine')) return 'trust_clearance'
+  if (haystack.includes('transfer') || haystack.includes('course') || haystack.includes('credit') || haystack.includes('equival')) return 'transfer_credit_review'
+  if (haystack.includes('offer') || haystack.includes('letter') || haystack.includes('release')) return 'offer_release'
+  if (haystack.includes('ready') || haystack.includes('readiness')) return 'readiness_review'
+  return defaultDecisionTypeKey
+}
+
+function getDecisionTypeConfig(decisionType) {
+  return decisionTypeConfig[decisionType] || decisionTypeConfig[defaultDecisionTypeKey]
+}
+
+function getRecommendationText({ recommendation, runResult, artifacts, readiness, decisionTypeLabel }) {
+  const directText = recommendation?.nextAction
+    || recommendation?.next_action
+    || recommendation?.action
+    || artifacts?.recommendationReason
+    || recommendation?.reason
+    || getResultMessage(runResult, '')
+
+  if (directText) return directText
+  if (String(readiness || '').toLowerCase().includes('hold')) return `Governed AI recommends holding this ${String(decisionTypeLabel || 'decision').toLowerCase()} until the blocker is resolved.`
+  return `Governed AI recommends reviewing the ${String(decisionTypeLabel || 'decision').toLowerCase()} evidence before taking action.`
+}
+
+function getRecommendationActionLabel(recommendationText, decisionType) {
+  const value = String(recommendationText || '').toLowerCase()
+  if (value.includes('course') || value.includes('equival')) return 'Review course equivalency'
+  if (value.includes('trust') || value.includes('hold')) return 'Review trust blockers'
+  if (value.includes('evidence') || value.includes('missing') || value.includes('request')) return 'Request more evidence'
+  if (value.includes('offer') || value.includes('admit') || value.includes('release')) return 'Approve this decision step'
+  return getDecisionTypeConfig(decisionType).primaryAction
+}
+
 export default function DecisionStudioDetailPage() {
   const { decisionId } = useParams()
   const { session, fetchWithTenantAuth } = useAuth()
@@ -77,6 +195,7 @@ export default function DecisionStudioDetailPage() {
   const [assigneeUserId, setAssigneeUserId] = useState('')
   const [assignQueue, setAssignQueue] = useState('')
   const [reviewNote, setReviewNote] = useState('')
+  const [activePacketTab, setActivePacketTab] = useState('recommendation')
 
   const detailUrl = `${decisionBaseUrl}/${decisionId}`
   const timelineUrl = `${decisionBaseUrl}/${decisionId}/timeline`
@@ -165,6 +284,10 @@ export default function DecisionStudioDetailPage() {
   useEffect(() => {
     loadDecision()
   }, [loadDecision])
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }, [decisionId])
 
   useEffect(() => {
     loadAgentDetails()
@@ -321,6 +444,25 @@ export default function DecisionStudioDetailPage() {
   const recommendationRationale = normalizeRationale(decisionRecommendation?.rationale)
   const reviewedRecommendationRationale = normalizeRationale(lastReviewedSnapshot?.snapshot?.recommendation?.rationale)
   const runRecommendationRationale = normalizeRationale(decisionRunArtifacts.recommendationRationale)
+  const decisionType = inferDecisionType(detail, decisionRecommendation, decisionRunArtifacts)
+  const activeDecisionType = getDecisionTypeConfig(decisionType)
+  const humanRecommendation = getRecommendationText({
+    recommendation: decisionRecommendation,
+    runResult: decisionRunResult,
+    artifacts: decisionRunArtifacts,
+    readiness: detail?.readiness,
+    decisionTypeLabel: activeDecisionType.label,
+  })
+  const recommendationActionLabel = getRecommendationActionLabel(humanRecommendation, decisionType)
+  const tabLabelMap = {
+    recommendation: 'Recommendation',
+    student: 'Student & program',
+    evidence: activeDecisionType.evidenceLabel,
+    trust: 'Trust',
+    review: activeDecisionType.reviewLabel,
+    history: 'Notes & timeline',
+  }
+  const packetTabs = activeDecisionType.tabs.map((key) => ({ key, label: tabLabelMap[key] || key }))
 
   if (isLoading && !detail) {
     return (
@@ -361,9 +503,9 @@ export default function DecisionStudioDetailPage() {
       <Link to="/decisions" className="back-link"><ArrowLeft size={16} /> Back to Decision Studio</Link>
 
       <SectionHeader
-        eyebrow="Decision packet"
+        eyebrow={activeDecisionType.label}
         title={detail.student?.name || 'Decision packet'}
-        subtitle={`${detail.program?.name || 'Program not set'} - Updated ${formatDateTime(detail.updatedAt)}`}
+        subtitle={`${detail.program?.name || 'Program not set'} - ${activeDecisionType.description}`}
         actions={(
           <>
             <button type="button" className="primary-button" onClick={handleGenerateRecommendation} disabled={isGeneratingRecommendation}>
@@ -382,17 +524,25 @@ export default function DecisionStudioDetailPage() {
         <div className="panel-header">
           <div>
             <h3>Packet status</h3>
-            <p>Live review state, ownership, and queue context.</p>
+            <p>{activeDecisionType.description}</p>
           </div>
           <div className="pill-row compact">
+            <span className="badge neutral-badge">{activeDecisionType.label}</span>
             <span className="badge neutral-badge">{detail.status}</span>
             <span className="badge neutral-badge">{detail.readiness}</span>
             <span className="badge neutral-badge">{detail.queue || 'No queue'}</span>
           </div>
         </div>
 
+        <div className="decision-type-band">
+          <span>Decision being made</span>
+          <strong>{activeDecisionType.label}</strong>
+          <p className="muted-copy">{activeDecisionType.description}</p>
+        </div>
+
         <div className="metric-cluster profile-metrics">
           <div><span>Assigned to</span><strong>{detail.assignedTo?.name || 'Unassigned'}</strong></div>
+          <div><span>Decision type</span><strong>{activeDecisionType.label}</strong></div>
           <div><span>Created</span><strong>{formatDateTime(detail.createdAt)}</strong></div>
           <div><span>Updated</span><strong>{formatDateTime(detail.updatedAt)}</strong></div>
           <div><span>External student id</span><strong>{detail.student?.externalId || 'Not provided'}</strong></div>
@@ -407,6 +557,22 @@ export default function DecisionStudioDetailPage() {
         ) : null}
       </section>
 
+      <section className="work-tabs-stack decision-packet-tabs">
+        <div className="tab-switcher">
+          {packetTabs.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`tab-button ${activePacketTab === tab.key ? 'active-tab-button' : ''}`}
+              onClick={() => setActivePacketTab(tab.key)}
+            >
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {activePacketTab === 'student' ? (
       <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
@@ -436,14 +602,28 @@ export default function DecisionStudioDetailPage() {
           </div>
         </article>
       </section>
+      ) : null}
 
+      {activePacketTab === 'recommendation' ? (
       <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Recommendation</h3>
-              <p>Explainable outcome guidance with fit and transfer estimate.</p>
+              <h3>Governed AI recommendation</h3>
+              <p>Plain-language next step for this {activeDecisionType.label.toLowerCase()}.</p>
             </div>
+          </div>
+          <div className="decision-recommendation-callout">
+            <h4>{humanRecommendation}</h4>
+            <p>This recommendation is about the current packet type: {activeDecisionType.label.toLowerCase()}.</p>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => handleReviewAction('accept_recommendation')}
+              disabled={activeReviewAction !== ''}
+            >
+              {activeReviewAction === 'accept_recommendation' ? 'Applying...' : recommendationActionLabel}
+            </button>
           </div>
           <div className="metric-cluster">
             <div><span>Fit</span><strong>{formatPercent(decisionRecommendation?.fit)}</strong></div>
@@ -582,13 +762,15 @@ export default function DecisionStudioDetailPage() {
           )}
         </article>
       </section>
+      ) : null}
 
+      {activePacketTab === 'evidence' ? (
       <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Evidence</h3>
-              <p>Academic and parser evidence supporting the packet.</p>
+              <h3>{activeDecisionType.evidenceLabel}</h3>
+              <p>Evidence supporting this {activeDecisionType.label.toLowerCase()}.</p>
             </div>
           </div>
           <div className="metric-cluster">
@@ -601,7 +783,9 @@ export default function DecisionStudioDetailPage() {
           </div>
         </article>
       </section>
+      ) : null}
 
+      {activePacketTab === 'trust' ? (
       <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
@@ -631,12 +815,16 @@ export default function DecisionStudioDetailPage() {
             <p className="muted-copy">No trust signals are active on this packet.</p>
           )}
         </article>
+      </section>
+      ) : null}
 
+      {activePacketTab === 'review' ? (
+      <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
             <div>
-              <h3>Actions</h3>
-              <p>Accept or send back the recommendation, then manage assignment separately.</p>
+              <h3>{activeDecisionType.reviewLabel}</h3>
+              <p>Record the human decision for this {activeDecisionType.label.toLowerCase()}.</p>
             </div>
           </div>
 
@@ -658,7 +846,7 @@ export default function DecisionStudioDetailPage() {
                   onClick={() => handleReviewAction('accept_recommendation')}
                   disabled={activeReviewAction !== ''}
                 >
-                  {activeReviewAction === 'accept_recommendation' ? 'Applying...' : 'Accept recommendation'}
+                  {activeReviewAction === 'accept_recommendation' ? 'Applying...' : recommendationActionLabel}
                 </button>
                 <button
                   type="button"
@@ -698,7 +886,9 @@ export default function DecisionStudioDetailPage() {
           </div>
         </article>
       </section>
+      ) : null}
 
+      {activePacketTab === 'history' ? (
       <section className="decision-detail-grid">
         <article className="panel">
           <div className="panel-header">
@@ -777,6 +967,7 @@ export default function DecisionStudioDetailPage() {
           )}
         </article>
       </section>
+      ) : null}
     </div>
   )
 }

@@ -7,6 +7,34 @@ import { useAuth } from '../context/AuthContext'
 const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 const decisionsUrl = `${apiBaseUrl}/api/v1/decisions`
 const decisionsPerPage = 10
+const decisionTypeOptions = [
+  { value: 'admissions_decision', label: 'Admissions decision' },
+  { value: 'offer_release', label: 'Offer release' },
+  { value: 'transfer_credit_review', label: 'Transfer credit review' },
+  { value: 'scholarship_review', label: 'Scholarship review' },
+  { value: 'trust_clearance', label: 'Trust clearance' },
+  { value: 'readiness_review', label: 'Readiness review' },
+]
+
+function getDecisionTypeLabel(value, item = {}) {
+  const normalized = String(value || item.decision_type || item.type || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  const match = decisionTypeOptions.find((option) => option.value === normalized)
+  if (match) return match.label
+
+  const haystack = [
+    item.queue,
+    item.readiness,
+    item.program,
+    item.reason,
+  ].filter(Boolean).join(' ').toLowerCase()
+
+  if (haystack.includes('scholarship') || haystack.includes('financial aid') || haystack.includes('fafsa')) return 'Scholarship review'
+  if (haystack.includes('trust') || haystack.includes('fraud') || haystack.includes('quarantine')) return 'Trust clearance'
+  if (haystack.includes('transfer') || haystack.includes('course') || haystack.includes('credit') || haystack.includes('equival')) return 'Transfer credit review'
+  if (haystack.includes('offer') || haystack.includes('letter') || haystack.includes('release')) return 'Offer release'
+  if (haystack.includes('ready') || haystack.includes('readiness')) return 'Readiness review'
+  return 'Admissions decision'
+}
 
 function normalizeDecisions(payload) {
   if (Array.isArray(payload)) return payload
@@ -29,6 +57,7 @@ export default function DecisionStudioPage() {
   const [createError, setCreateError] = useState('')
   const [createSuccess, setCreateSuccess] = useState('')
   const [createForm, setCreateForm] = useState({
+    decisionType: 'admissions_decision',
     student: '',
     program: '',
     fit: '',
@@ -73,6 +102,7 @@ export default function DecisionStudioPage() {
     return decisions.filter((item) => {
       const haystack = [
         item.student,
+        getDecisionTypeLabel(item.decisionType, item),
         item.program,
         item.readiness,
         item.reason,
@@ -103,6 +133,7 @@ export default function DecisionStudioPage() {
     setCreateSuccess('')
     setCreateForm({
       student: '',
+      decisionType: 'admissions_decision',
       program: '',
       fit: '',
       creditEstimate: '',
@@ -146,6 +177,8 @@ export default function DecisionStudioPage() {
         },
         body: JSON.stringify({
           student: createForm.student.trim(),
+          decisionType: createForm.decisionType,
+          decision_type: createForm.decisionType,
           program: createForm.program.trim(),
           fit: createForm.fit === '' ? null : Number(createForm.fit),
           creditEstimate: createForm.creditEstimate === '' ? null : Number(createForm.creditEstimate),
@@ -189,7 +222,7 @@ export default function DecisionStudioPage() {
       <SectionHeader
         eyebrow="Explainable decisioning"
         title="Decision Studio"
-        subtitle="Move beyond notes and queues. Build a decision packet staff can approve, defend, and sync downstream."
+        subtitle="Open the right packet type: admissions decision, offer release, transfer credit review, scholarship review, trust clearance, or readiness review."
         actions={(
           <button type="button" className="primary-button" onClick={openCreateModal}>
             Create decision packet
@@ -199,12 +232,12 @@ export default function DecisionStudioPage() {
 
       <section className="panel decision-hero">
         <div className="decision-summary">
-          <h3>Decision packet anatomy</h3>
+          <h3>Decision packet types</h3>
           <div className="stack-list">
-            <div className="stack-row"><strong>Academic fit</strong><span>Program alignment, rubric score, and missing requirements.</span></div>
-            <div className="stack-row"><strong>Transfer certainty</strong><span>Likely accepted credits with evidence and exceptions.</span></div>
-            <div className="stack-row"><strong>Trust evidence</strong><span>Document provenance, risk signals, and quarantine history.</span></div>
-            <div className="stack-row"><strong>Next action</strong><span>Admit, hold, request item, route to counselor, or sync to SIS.</span></div>
+            <div className="stack-row"><strong>Admissions decision</strong><span>Admit, deny, hold, or request more information.</span></div>
+            <div className="stack-row"><strong>Offer release</strong><span>Decide whether the official acceptance letter can be sent.</span></div>
+            <div className="stack-row"><strong>Transfer credit review</strong><span>Confirm which courses transfer and how they apply.</span></div>
+            <div className="stack-row"><strong>Trust clearance</strong><span>Clear, hold, quarantine, or escalate document risk.</span></div>
           </div>
         </div>
       </section>
@@ -227,13 +260,13 @@ export default function DecisionStudioPage() {
           <div className="panel-header">
             <div>
               <h3>Decision workbench</h3>
-              <p>Search and page through packet summaries, then open a decision for the full review surface.</p>
+              <p>Search and page through packet summaries, then open the specific decision type for review.</p>
             </div>
           </div>
           <div className="toolbar-row">
             <input
               className="filter-input"
-              placeholder="Search by student, program, readiness, rationale, fit, or credit estimate"
+              placeholder="Search by student, decision type, program, readiness, rationale, fit, or credit estimate"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -268,6 +301,7 @@ export default function DecisionStudioPage() {
                   <thead>
                     <tr>
                       <th>Student</th>
+                      <th>Decision type</th>
                       <th>Program</th>
                       <th>Fit</th>
                       <th>Credit estimate</th>
@@ -292,6 +326,7 @@ export default function DecisionStudioPage() {
                         role={item.id ? 'button' : undefined}
                       >
                         <td><strong>{item.student}</strong></td>
+                        <td><span className="badge neutral-badge">{getDecisionTypeLabel(item.decisionType, item)}</span></td>
                         <td>{item.program}</td>
                         <td>{item.fit}%</td>
                         <td>{item.creditEstimate}</td>
@@ -315,7 +350,7 @@ export default function DecisionStudioPage() {
             <div className="panel-header">
               <div>
                 <h3 id="create-decision-title">Create decision packet</h3>
-                <p>Capture a review-ready packet and sync it once the backend create route is available.</p>
+                <p>Capture the decision type first so reviewers know exactly what they are approving.</p>
               </div>
               <button type="button" className="icon-button" onClick={closeCreateModal} aria-label="Close create decision packet">
                 <X size={18} />
@@ -333,6 +368,15 @@ export default function DecisionStudioPage() {
                   placeholder="Avery Carter"
                   required
                 />
+              </label>
+
+              <label className="auth-field">
+                <span>Decision type</span>
+                <select name="decisionType" value={createForm.decisionType} onChange={handleCreateChange}>
+                  {decisionTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </label>
 
               <label className="auth-field">

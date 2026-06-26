@@ -124,6 +124,48 @@ const postAdmitMilestones = [
 const milestoneStatuses = ['Not started', 'In progress', 'Blocked', 'Complete', 'Waived']
 const territoryOptions = ['North', 'South', 'East', 'West', 'Transfer Partners', 'Online', 'International']
 const recruitmentEventTypes = ['College fair', 'High school visit', 'Transfer partner visit', 'Open house', 'Webinar', 'Campus visit', 'Counselor travel']
+const scholarshipCatalog = [
+  {
+    id: 'transfer-achievement',
+    name: 'Transfer Achievement Scholarship',
+    amount: 'Up to $4,000',
+    owner: 'Admissions',
+    description: 'For transfer applicants with strong college credit completion and solid academic momentum.',
+    action: 'Route to transfer scholarship review',
+  },
+  {
+    id: 'academic-merit',
+    name: 'Academic Merit Scholarship',
+    amount: 'Up to $6,500',
+    owner: 'Admissions',
+    description: 'For applicants whose transcript shows a high cumulative GPA and consistent course performance.',
+    action: 'Generate merit estimate',
+  },
+  {
+    id: 'stem-pathway',
+    name: 'STEM Pathway Scholarship',
+    amount: 'Up to $5,000',
+    owner: 'Academic Department',
+    description: 'For students with mapped STEM coursework aligned to a STEM program or degree pathway.',
+    action: 'Send STEM scholarship interest form',
+  },
+  {
+    id: 'health-sciences',
+    name: 'Health Sciences Scholarship',
+    amount: 'Up to $5,500',
+    owner: 'Academic Department',
+    description: 'For nursing and health-science applicants with science prerequisites visible in transcript evidence.',
+    action: 'Route to health sciences scholarship review',
+  },
+  {
+    id: 'financial-need',
+    name: 'Need-Based Institutional Grant',
+    amount: 'Varies',
+    owner: 'Financial Aid',
+    description: 'For students using financial aid or FAFSA evidence who may qualify for institutional need-based support.',
+    action: 'Ask Financial Aid to review need eligibility',
+  },
+]
 
 async function parseApiPayload(response) {
   const text = await response.text()
@@ -776,6 +818,296 @@ function getFirstValue(...values) {
   return values.find((value) => value !== null && value !== undefined && value !== '')
 }
 
+function formatCurrency(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  const number = Number(String(value).replace(/[$,]/g, ''))
+  if (!Number.isFinite(number)) return String(value)
+  return number.toLocaleString([], { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+}
+
+function parseCurrencyAmount(value) {
+  if (value === null || value === undefined || value === '') return 0
+  const number = Number(String(value).replace(/[^0-9.-]/g, ''))
+  return Number.isFinite(number) ? number : 0
+}
+
+function formatDisplayDate(value) {
+  if (!value) return 'Not set'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function formatBooleanValue(value, yesLabel = 'Yes', noLabel = 'No', fallback = 'Not set') {
+  if (value === true) return yesLabel
+  if (value === false) return noLabel
+  if (value === null || value === undefined || value === '') return fallback
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', 'yes', 'y', '1', 'using', 'used', 'received', 'complete', 'submitted'].includes(normalized)) return yesLabel
+  if (['false', 'no', 'n', '0', 'none', 'not using', 'not_used', 'not submitted'].includes(normalized)) return noLabel
+  return String(value)
+}
+
+function getNestedObject(...values) {
+  return values.find((value) => value && typeof value === 'object' && !Array.isArray(value)) || {}
+}
+
+function buildApplicationSummary(student, checklistStats, readiness) {
+  const application = getNestedObject(
+    student?.application,
+    student?.applicationInfo,
+    student?.application_info,
+    student?.admissionsApplication,
+    student?.admissions_application,
+  )
+  const applicant = getNestedObject(student?.applicant, application?.applicant)
+  const startedAt = getFirstValue(application.startedAt, application.started_at, application.createdAt, application.created_at, student?.createdAt)
+  const submittedAt = getFirstValue(application.submittedAt, application.submitted_at, application.completedAt, application.completed_at)
+  const missingItems = (checklistStats?.items || []).filter((item) => !item.done)
+
+  return {
+    status: getFirstValue(application.status, application.applicationStatus, student?.applicationStatus, student?.application_status, student?.stage, readiness?.label, 'In progress'),
+    applicationId: getFirstValue(application.id, application.applicationId, application.application_id, student?.applicationId, student?.application_id, student?.id),
+    type: getFirstValue(application.type, application.applicationType, application.application_type, student?.applicationType, student?.population, 'Admissions application'),
+    term: getFirstValue(application.entryTerm, application.entry_term, application.term, student?.entryTerm, student?.entry_term, student?.startTerm, student?.start_term, 'Term pending'),
+    program: getProgramDisplay(student),
+    campus: getFirstValue(application.campus, student?.campus, student?.location, 'Campus pending'),
+    delivery: getFirstValue(application.delivery, application.modality, student?.delivery, student?.modality, 'Modality pending'),
+    startedAt: formatDisplayDate(startedAt),
+    submittedAt: submittedAt ? formatDisplayDate(submittedAt) : 'Not submitted',
+    completion: `${checklistStats?.completionPercent ?? 0}%`,
+    completedCount: checklistStats?.completedCount ?? 0,
+    totalRequired: checklistStats?.totalRequired ?? 0,
+    missingItems,
+    applicantType: getFirstValue(applicant.type, applicant.applicantType, applicant.applicant_type, student?.population, 'Not set'),
+    residency: getFirstValue(application.residency, applicant.residency, student?.residency, 'Not set'),
+    studentType: getFirstValue(application.studentType, application.student_type, student?.studentType, student?.student_type, 'Not set'),
+    nextStep: getFirstValue(application.nextStep, application.next_step, student?.nextBestAction, student?.recommendation?.nextBestAction, readiness?.reason, 'Review next application item'),
+  }
+}
+
+function buildFinancialAidSummary(student, postAdmitMilestoneRows) {
+  const aid = getNestedObject(
+    student?.financialAid,
+    student?.financial_aid,
+    student?.aid,
+    student?.fafsa,
+  )
+  const fafsa = getNestedObject(aid.fafsa, student?.fafsa, student?.fafsaDetails, student?.fafsa_details)
+  const financialAidMilestone = postAdmitMilestoneRows.find((row) => row.id === 'financial_aid_package') || {}
+  const scholarshipMilestone = postAdmitMilestoneRows.find((row) => row.id === 'scholarship_status') || {}
+  const hasAidSignal = Boolean(
+    aid.usingFinancialAid
+    || aid.using_financial_aid
+    || aid.status
+    || fafsa.status
+    || fafsa.receivedAt
+    || financialAidMilestone.status !== 'Not started'
+    || scholarshipMilestone.status !== 'Not started',
+  )
+
+  return {
+    usingAid: formatBooleanValue(getFirstValue(aid.usingFinancialAid, aid.using_financial_aid, student?.usingFinancialAid, student?.using_financial_aid, hasAidSignal ? true : ''), 'Using aid', 'Not using aid', 'Unknown'),
+    aidStatus: getFirstValue(aid.status, aid.financialAidStatus, aid.financial_aid_status, financialAidMilestone.status, 'Not started'),
+    fafsaStatus: getFirstValue(fafsa.status, aid.fafsaStatus, aid.fafsa_status, student?.fafsaStatus, student?.fafsa_status, 'Not received'),
+    fafsaReceivedAt: formatDisplayDate(getFirstValue(fafsa.receivedAt, fafsa.received_at, aid.fafsaReceivedAt, aid.fafsa_received_at)),
+    aidYear: getFirstValue(aid.aidYear, aid.aid_year, fafsa.aidYear, fafsa.aid_year, 'Aid year pending'),
+    dependencyStatus: getFirstValue(fafsa.dependencyStatus, fafsa.dependency_status, aid.dependencyStatus, aid.dependency_status, 'Not set'),
+    sai: getFirstValue(fafsa.sai, fafsa.studentAidIndex, fafsa.student_aid_index, aid.sai, aid.efc, 'Not set'),
+    verificationStatus: getFirstValue(aid.verificationStatus, aid.verification_status, fafsa.verificationStatus, fafsa.verification_status, 'Not selected'),
+    packageStatus: getFirstValue(aid.packageStatus, aid.package_status, financialAidMilestone.status, 'Not started'),
+    estimatedAid: formatCurrency(getFirstValue(aid.estimatedAid, aid.estimated_aid, aid.awardAmount, aid.award_amount, aid.packageAmount, aid.package_amount)),
+    scholarshipStatus: getFirstValue(aid.scholarshipStatus, aid.scholarship_status, scholarshipMilestone.status, 'Not started'),
+    scholarshipAmount: formatCurrency(getFirstValue(aid.scholarshipAmount, aid.scholarship_amount, aid.meritAward, aid.merit_award)),
+    nextStep: getFirstValue(aid.nextStep, aid.next_step, financialAidMilestone.blocker, scholarshipMilestone.blocker, 'Confirm FAFSA and aid package status'),
+  }
+}
+
+function getScholarshipOfferSources(student) {
+  const aid = getNestedObject(student?.financialAid, student?.financial_aid, student?.aid)
+  const sources = [
+    student?.scholarshipOffers,
+    student?.scholarship_offers,
+    student?.offeredScholarships,
+    student?.offered_scholarships,
+    student?.awardedScholarships,
+    student?.awarded_scholarships,
+    aid.scholarshipOffers,
+    aid.scholarship_offers,
+    aid.offeredScholarships,
+    aid.offered_scholarships,
+    aid.awardedScholarships,
+    aid.awarded_scholarships,
+  ].filter(Array.isArray)
+
+  return sources.flat()
+}
+
+function normalizeScholarshipOffers(student, financialAidSummary) {
+  const rows = getScholarshipOfferSources(student).map((row, index) => {
+    const sourceType = String(getFirstValue(row.sourceType, row.source_type, row.type, row.providerType, row.provider_type, '')).toLowerCase()
+    const provider = getFirstValue(row.provider, row.organization, row.source, row.institution, row.school, '')
+    const isExternal = sourceType.includes('external') || sourceType.includes('outside') || row.external === true || row.isExternal === true || row.is_external === true
+    const amount = getFirstValue(row.amount, row.awardAmount, row.award_amount, row.offeredAmount, row.offered_amount, row.annualAmount, row.annual_amount)
+
+    return {
+      id: row.id || row.offerId || row.offer_id || row.scholarshipId || row.scholarship_id || `scholarship-offer-${index}`,
+      name: row.name || row.title || row.label || 'Scholarship offer',
+      sourceType: isExternal ? 'External' : 'Institutional',
+      provider: provider || (isExternal ? 'External provider' : student?.institutionGoal || 'This institution'),
+      amount: formatCurrency(amount),
+      amountValue: parseCurrencyAmount(amount),
+      status: getFirstValue(row.status, row.offerStatus, row.offer_status, row.awardStatus, row.award_status, 'Offered'),
+      offeredAt: formatDisplayDate(getFirstValue(row.offeredAt, row.offered_at, row.awardedAt, row.awarded_at, row.createdAt, row.created_at)),
+      renewable: formatBooleanValue(getFirstValue(row.renewable, row.isRenewable, row.is_renewable), 'Renewable', 'Not renewable', 'Not set'),
+      requirements: getFirstValue(row.requirements, row.criteria, row.conditions, row.nextRequirement, row.next_requirement, 'No requirements listed'),
+      notes: getFirstValue(row.notes, row.description, row.summary, ''),
+    }
+  })
+
+  if (!rows.length && financialAidSummary.scholarshipAmount !== '-') {
+    rows.push({
+      id: 'institutional-scholarship-summary',
+      name: 'Institutional scholarship',
+      sourceType: 'Institutional',
+      provider: student?.institutionGoal || 'This institution',
+      amount: financialAidSummary.scholarshipAmount,
+      amountValue: parseCurrencyAmount(financialAidSummary.scholarshipAmount),
+      status: financialAidSummary.scholarshipStatus,
+      offeredAt: 'Not set',
+      renewable: 'Not set',
+      requirements: 'Confirm award conditions with Financial Aid.',
+      notes: '',
+    })
+  }
+
+  return rows.sort((first, second) => {
+    if (first.sourceType !== second.sourceType) return first.sourceType.localeCompare(second.sourceType)
+    return second.amountValue - first.amountValue || first.name.localeCompare(second.name)
+  })
+}
+
+function getScholarshipOfferSummary(rows) {
+  return rows.reduce((summary, row) => {
+    const key = row.sourceType === 'External' ? 'external' : 'institutional'
+    const status = String(row.status || '').toLowerCase()
+
+    return {
+      ...summary,
+      totalAmount: summary.totalAmount + row.amountValue,
+      [key]: summary[key] + 1,
+      accepted: summary.accepted + (status.includes('accept') || status.includes('award') ? 1 : 0),
+      pending: summary.pending + (status.includes('pending') || status.includes('offer') || status.includes('review') ? 1 : 0),
+    }
+  }, { totalAmount: 0, institutional: 0, external: 0, accepted: 0, pending: 0 })
+}
+
+function getScholarshipCatalogRows(student) {
+  const explicitRows = getFirstValue(
+    student?.scholarships,
+    student?.scholarshipOptions,
+    student?.scholarship_options,
+    student?.financialAid?.scholarships,
+    student?.financial_aid?.scholarships,
+  )
+
+  if (!Array.isArray(explicitRows) || !explicitRows.length) return scholarshipCatalog
+
+  return explicitRows.map((row, index) => ({
+    id: row.id || row.scholarshipId || row.scholarship_id || `scholarship-${index}`,
+    name: row.name || row.title || row.label || 'Scholarship option',
+    amount: row.amount || row.estimatedAmount || row.estimated_amount || row.awardAmount || row.award_amount || 'Varies',
+    owner: row.owner || row.department || 'Financial Aid',
+    description: row.description || row.summary || row.criteria || 'Catalog scholarship option.',
+    action: row.action || row.nextStep || row.next_step || 'Review scholarship eligibility',
+    status: row.status || '',
+    matchScore: row.matchScore || row.match_score,
+    evidence: Array.isArray(row.evidence) ? row.evidence : [],
+    missing: Array.isArray(row.missing) ? row.missing : [],
+  }))
+}
+
+function includesAny(text, terms) {
+  const normalized = String(text || '').toLowerCase()
+  return terms.some((term) => normalized.includes(term))
+}
+
+function getScholarshipStatus(score, missingCount = 0) {
+  if (score >= 85 && missingCount === 0) return 'Strong match'
+  if (score >= 65) return 'Review match'
+  return 'Possible'
+}
+
+function buildScholarshipMatches({ student, equivalencyRows, transcriptCourseRows, subjectGpaRows, financialAidSummary }) {
+  if (!student) return []
+
+  const programText = getProgramDisplay(student).toLowerCase()
+  const tagsText = Array.isArray(student.tags) ? student.tags.join(' ').toLowerCase() : ''
+  const courseText = [
+    ...transcriptCourseRows.map((row) => `${row.sourceCourse} ${row.sourceTitle} ${row.mappedTo} ${row.countsAs}`),
+    ...equivalencyRows.map((row) => `${row.catalogCourse} ${row.catalogTitle} ${row.requirement} ${row.rationale}`),
+    ...subjectGpaRows.map((row) => row.subject),
+    programText,
+    tagsText,
+  ].join(' ').toLowerCase()
+  const gpa = Number(getStudentOverallGpa(student))
+  const credits = transcriptCourseRows.reduce((sum, row) => {
+    const creditsValue = Number(row.credits)
+    return Number.isFinite(creditsValue) ? sum + creditsValue : sum
+  }, 0) || Number(student.creditsAccepted || 0)
+  const isTransfer = includesAny(`${programText} ${tagsText} ${student.population || ''}`, ['transfer']) || credits >= 12
+  const usesAid = includesAny(`${financialAidSummary.usingAid} ${financialAidSummary.fafsaStatus} ${financialAidSummary.aidStatus}`, ['using', 'received', 'submitted', 'complete'])
+  const hasStem = includesAny(courseText, ['computer', 'science', 'stem', 'math', 'calculus', 'statistics', 'biology', 'chemistry', 'engineering'])
+  const hasHealthScience = includesAny(courseText, ['nursing', 'health', 'anatomy', 'physiology', 'biology', 'chemistry', 'medical'])
+
+  return getScholarshipCatalogRows(student)
+    .map((scholarship) => {
+      if (scholarship.matchScore !== undefined) {
+        const score = Number(scholarship.matchScore)
+        const safeScore = Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 50
+        return {
+          ...scholarship,
+          amount: formatCurrency(scholarship.amount) === '-' ? scholarship.amount : formatCurrency(scholarship.amount),
+          matchScore: safeScore,
+          status: scholarship.status || getScholarshipStatus(safeScore, scholarship.missing?.length || 0),
+          evidence: scholarship.evidence.length ? scholarship.evidence : ['Provided by scholarship catalog response.'],
+          missing: scholarship.missing || [],
+        }
+      }
+
+      const evidence = []
+      const missing = []
+      let score = 35
+
+      if (scholarship.id === 'transfer-achievement') {
+        if (isTransfer) { score += 25; evidence.push('Student is in a transfer pathway or has college transfer credit.') } else missing.push('Transfer pathway or transfer credit confirmation')
+        if (credits >= 24) { score += 20; evidence.push(`${formatCredits(credits)} transcript credits are visible.`) } else missing.push('At least 24 transferable or attempted credits')
+        if (Number.isFinite(gpa) && gpa >= 3) { score += 15; evidence.push(`Transcript GPA is ${formatGpa(gpa)}.`) } else missing.push('GPA at or above 3.000')
+      } else if (scholarship.id === 'academic-merit') {
+        if (Number.isFinite(gpa) && gpa >= 3.5) { score += 40; evidence.push(`High transcript GPA: ${formatGpa(gpa)}.`) } else if (Number.isFinite(gpa) && gpa >= 3) { score += 22; evidence.push(`Transcript GPA is merit-reviewable at ${formatGpa(gpa)}.`) } else missing.push('Higher confirmed cumulative GPA')
+        if (subjectGpaRows.some((row) => Number(row.gpa) >= 3.5)) { score += 15; evidence.push('One or more subject areas show a 3.500+ GPA signal.') }
+      } else if (scholarship.id === 'stem-pathway') {
+        if (hasStem) { score += 35; evidence.push('Transcript and catalog mapping include STEM-aligned coursework.') } else missing.push('STEM course or program evidence')
+        if (includesAny(programText, ['computer', 'science', 'engineering', 'biology', 'chemistry', 'math'])) { score += 15; evidence.push(`Program interest is ${getProgramDisplay(student)}.`) }
+      } else if (scholarship.id === 'health-sciences') {
+        if (hasHealthScience) { score += 35; evidence.push('Transcript and catalog mapping include health-science prerequisite evidence.') } else missing.push('Health-science prerequisite evidence')
+        if (includesAny(programText, ['nursing', 'health', 'biology', 'medical'])) { score += 15; evidence.push(`Program interest is ${getProgramDisplay(student)}.`) }
+      } else if (scholarship.id === 'financial-need') {
+        if (usesAid) { score += 35; evidence.push(`Aid signal: ${financialAidSummary.usingAid}; FAFSA is ${financialAidSummary.fafsaStatus}.`) } else missing.push('FAFSA or financial aid usage confirmation')
+        if (financialAidSummary.sai && financialAidSummary.sai !== 'Not set') { score += 15; evidence.push(`SAI / EFC is ${financialAidSummary.sai}.`) }
+      }
+
+      return {
+        ...scholarship,
+        matchScore: Math.max(0, Math.min(100, score)),
+        status: getScholarshipStatus(score, missing.length),
+        evidence: evidence.length ? evidence : ['Student record has a partial catalog match.'],
+        missing,
+      }
+    })
+    .sort((first, second) => second.matchScore - first.matchScore || first.name.localeCompare(second.name))
+}
+
 function getStudentFirstName(student) {
   const name = student?.preferredName || student?.firstName || student?.name || 'there'
   return String(name).trim().split(/\s+/)[0] || 'there'
@@ -1147,6 +1479,9 @@ export default function StudentProfilePage() {
   const visibleTabs = useMemo(() => {
     const tabs = [
       { key: 'overview', label: 'Overview', allowed: hasAnyPermission(['view_student_360']) },
+      { key: 'application', label: 'Application', allowed: hasAnyPermission(['view_student_360']) },
+      { key: 'financial_aid', label: 'Financial Aid', allowed: hasAnyPermission(['view_student_360']) },
+      { key: 'scholarships', label: 'Scholarships', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'timeline', label: 'Timeline', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'outreach', label: 'Outreach', allowed: hasAnyPermission(['view_student_360']) },
       { key: 'checklist', label: 'Checklist', allowed: hasAnyPermission(['view_student_360']) },
@@ -1254,6 +1589,8 @@ export default function StudentProfilePage() {
   const handoffRows = useMemo(() => getHandoffs(student), [student])
   const postAdmitMilestoneRows = useMemo(() => buildPostAdmitMilestoneRows(student), [student])
   const milestoneSummary = useMemo(() => getMilestoneSummary(postAdmitMilestoneRows), [postAdmitMilestoneRows])
+  const applicationSummary = useMemo(() => buildApplicationSummary(student, checklistStats, readiness), [checklistStats, readiness, student])
+  const financialAidSummary = useMemo(() => buildFinancialAidSummary(student, postAdmitMilestoneRows), [postAdmitMilestoneRows, student])
   const recruitmentEvents = useMemo(() => getRecruitmentEvents(student), [student])
   const derivedTimelineEvents = useMemo(
     () => buildDerivedTimeline(student, checklistStats, readiness),
@@ -1283,6 +1620,15 @@ export default function StudentProfilePage() {
   const testScoreRows = useMemo(() => buildTestScoreRows(student), [student])
   const transcriptCourseRows = useMemo(() => buildTranscriptCourseRows(student), [student])
   const equivalencyCreditSummary = useMemo(() => getEquivalencyCreditSummary(equivalencyRows), [equivalencyRows])
+  const scholarshipOffers = useMemo(() => normalizeScholarshipOffers(student, financialAidSummary), [financialAidSummary, student])
+  const scholarshipOfferSummary = useMemo(() => getScholarshipOfferSummary(scholarshipOffers), [scholarshipOffers])
+  const scholarshipMatches = useMemo(() => buildScholarshipMatches({
+    student,
+    equivalencyRows,
+    transcriptCourseRows,
+    subjectGpaRows,
+    financialAidSummary,
+  }), [equivalencyRows, financialAidSummary, student, subjectGpaRows, transcriptCourseRows])
   const programOptions = useMemo(() => {
     const scopedPrograms = Array.isArray(currentUser?.scopes?.programs)
       ? currentUser.scopes.programs.filter((program) => program && program !== '*')
@@ -1424,7 +1770,7 @@ export default function StudentProfilePage() {
   }, [loadTimeline])
 
   useEffect(() => {
-    if (activeTab !== 'overview' || !student) return
+    if (!['overview', 'scholarships'].includes(activeTab) || !student) return
     loadEquivalencies()
   }, [activeTab, loadEquivalencies, student])
 
@@ -2081,6 +2427,232 @@ export default function StudentProfilePage() {
         </article>
         ) : null}
       </section>
+      ) : null}
+
+      {activeTab === 'application' ? (
+        <section className="dashboard-grid profile-grid student360-summary-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Application status</h3>
+                <p>Current application state, completion, and next step for admissions review.</p>
+              </div>
+              <span className="badge neutral-badge">{applicationSummary.status}</span>
+            </div>
+            <div className="metric-cluster profile-metrics">
+              <div><span>Status</span><strong>{applicationSummary.status}</strong></div>
+              <div><span>Completion</span><strong>{applicationSummary.completion}</strong></div>
+              <div><span>Submitted</span><strong>{applicationSummary.submittedAt}</strong></div>
+              <div><span>Term</span><strong>{applicationSummary.term}</strong></div>
+            </div>
+            <div className="callout-card">
+              <h4>Next application step</h4>
+              <p>{applicationSummary.nextStep}</p>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Application information</h3>
+                <p>Applicant, program, term, and application metadata in one place.</p>
+              </div>
+              <span className="badge neutral-badge">{applicationSummary.type}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>Application ID</strong><span>{applicationSummary.applicationId}</span></div>
+              <div className="stack-row"><strong>Applicant type</strong><span>{applicationSummary.applicantType}</span></div>
+              <div className="stack-row"><strong>Student type</strong><span>{applicationSummary.studentType}</span></div>
+              <div className="stack-row"><strong>Program</strong><span>{applicationSummary.program}</span></div>
+              <div className="stack-row"><strong>Campus</strong><span>{applicationSummary.campus}</span></div>
+              <div className="stack-row"><strong>Delivery</strong><span>{applicationSummary.delivery}</span></div>
+              <div className="stack-row"><strong>Residency</strong><span>{applicationSummary.residency}</span></div>
+              <div className="stack-row"><strong>Started</strong><span>{applicationSummary.startedAt}</span></div>
+            </div>
+          </article>
+
+          <article className="panel checklist-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Application requirements</h3>
+                <p>Items still controlling whether the file can move forward.</p>
+              </div>
+              <span className="badge neutral-badge">{applicationSummary.completedCount}/{applicationSummary.totalRequired}</span>
+            </div>
+            <ChecklistProgress
+              summary={{
+                completionPercent: checklistStats.completionPercent,
+                completedCount: checklistStats.completedCount,
+                totalRequired: checklistStats.totalRequired,
+                missingCount: checklistStats.missingCount,
+                needsReviewCount: checklistStats.needsReviewCount,
+                oneItemAway: checklistStats.oneItemAway,
+              }}
+            />
+            <div className="checklist">
+              {(applicationSummary.missingItems.length ? applicationSummary.missingItems : checklistStats.items.slice(0, 4)).map((item) => (
+                <div key={item.id || item.label} className="check-row">
+                  {item.done ? <CheckCircle2 size={18} /> : <CircleDot size={18} />}
+                  <span>{item.label}</span>
+                  <span className={`badge ${getChecklistStatusClass(item.status)}`}>
+                    {getChecklistStatusLabel(item.status)}
+                  </span>
+                </div>
+              ))}
+              {!checklistStats.items.length ? <p className="muted-copy">No application requirements are available yet.</p> : null}
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      {activeTab === 'financial_aid' ? (
+        <section className="dashboard-grid profile-grid student360-summary-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Financial aid status</h3>
+                <p>Whether the student is using aid and where the aid package stands.</p>
+              </div>
+              <span className="badge neutral-badge">{financialAidSummary.usingAid}</span>
+            </div>
+            <div className="metric-cluster profile-metrics">
+              <div><span>Using aid</span><strong>{financialAidSummary.usingAid}</strong></div>
+              <div><span>Aid status</span><strong>{financialAidSummary.aidStatus}</strong></div>
+              <div><span>Package</span><strong>{financialAidSummary.packageStatus}</strong></div>
+              <div><span>Estimated aid</span><strong>{financialAidSummary.estimatedAid}</strong></div>
+            </div>
+            <div className="callout-card">
+              <h4>Financial aid next step</h4>
+              <p>{financialAidSummary.nextStep}</p>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>FAFSA details</h3>
+                <p>FAFSA receipt, aid year, dependency, and verification context.</p>
+              </div>
+              <span className="badge neutral-badge">{financialAidSummary.fafsaStatus}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>FAFSA status</strong><span>{financialAidSummary.fafsaStatus}</span></div>
+              <div className="stack-row"><strong>Received</strong><span>{financialAidSummary.fafsaReceivedAt}</span></div>
+              <div className="stack-row"><strong>Aid year</strong><span>{financialAidSummary.aidYear}</span></div>
+              <div className="stack-row"><strong>SAI / EFC</strong><span>{financialAidSummary.sai}</span></div>
+              <div className="stack-row"><strong>Dependency</strong><span>{financialAidSummary.dependencyStatus}</span></div>
+              <div className="stack-row"><strong>Verification</strong><span>{financialAidSummary.verificationStatus}</span></div>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Aid and scholarship</h3>
+                <p>Financial aid package and scholarship readiness for enrollment follow-through.</p>
+              </div>
+              <span className="badge neutral-badge">{financialAidSummary.scholarshipStatus}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>Package status</strong><span>{financialAidSummary.packageStatus}</span></div>
+              <div className="stack-row"><strong>Estimated aid</strong><span>{financialAidSummary.estimatedAid}</span></div>
+              <div className="stack-row"><strong>Scholarship status</strong><span>{financialAidSummary.scholarshipStatus}</span></div>
+              <div className="stack-row"><strong>Scholarship amount</strong><span>{financialAidSummary.scholarshipAmount}</span></div>
+            </div>
+          </article>
+        </section>
+      ) : null}
+
+      {activeTab === 'scholarships' ? (
+        <section className="dashboard-grid profile-grid student360-summary-grid">
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Scholarship options</h3>
+                <p>Catalog scholarship matches using application, aid, transcript, and course equivalency evidence.</p>
+              </div>
+              <span className="badge neutral-badge">{scholarshipMatches.length} options</span>
+            </div>
+            <div className="metric-cluster profile-metrics">
+              <div><span>Top match</span><strong>{scholarshipMatches[0]?.name || 'No matches'}</strong></div>
+              <div><span>Offered total</span><strong>{scholarshipOfferSummary.totalAmount ? formatCurrency(scholarshipOfferSummary.totalAmount) : '-'}</strong></div>
+              <div><span>Institutional offers</span><strong>{scholarshipOfferSummary.institutional}</strong></div>
+              <div><span>External offers</span><strong>{scholarshipOfferSummary.external}</strong></div>
+            </div>
+            <div className="callout-card">
+              <h4>Governed AI scholarship context</h4>
+              <p>{isEquivalencyLoading ? 'Refreshing catalog course evidence before ranking scholarship options.' : 'Matches use the same transcript-to-catalog evidence shown in Overview, plus FAFSA and application signals when available.'}</p>
+              {equivalencyError ? <p>{equivalencyError}</p> : null}
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <div>
+                <h3>Match signals</h3>
+                <p>What the scholarship matcher knows about this student right now.</p>
+              </div>
+              <span className="badge neutral-badge">{getProgramDisplay(student)}</span>
+            </div>
+            <div className="stack-list">
+              <div className="stack-row"><strong>Program</strong><span>{getProgramDisplay(student)}</span></div>
+              <div className="stack-row"><strong>Overall GPA</strong><span>{academicSummary.overallGpa}</span></div>
+              <div className="stack-row"><strong>Financial aid</strong><span>{financialAidSummary.usingAid}</span></div>
+              <div className="stack-row"><strong>FAFSA</strong><span>{financialAidSummary.fafsaStatus}</span></div>
+              <div className="stack-row"><strong>Course catalog evidence</strong><span>{equivalencyRows.length ? `${equivalencyRows.length} mapped course row${equivalencyRows.length === 1 ? '' : 's'}` : 'Pending catalog map'}</span></div>
+            </div>
+          </article>
+
+          <article className="panel checklist-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Scholarships offered</h3>
+                <p>Institutional and external awards already offered or known for this student.</p>
+              </div>
+              <span className="badge neutral-badge">{scholarshipOffers.length} tracked</span>
+            </div>
+            <div className="metric-cluster profile-metrics">
+              <div><span>Accepted / awarded</span><strong>{scholarshipOfferSummary.accepted}</strong></div>
+              <div><span>Pending / offered</span><strong>{scholarshipOfferSummary.pending}</strong></div>
+              <div><span>Institutional</span><strong>{scholarshipOfferSummary.institutional}</strong></div>
+              <div><span>External</span><strong>{scholarshipOfferSummary.external}</strong></div>
+            </div>
+            <div className="stack-list">
+              {scholarshipOffers.map((offer) => (
+                <div key={offer.id} className="stack-row handoff-stack-row">
+                  <strong>{offer.name}</strong>
+                  <span>{offer.amount} - {offer.status} - {offer.sourceType}</span>
+                  <small>{offer.provider} - Offered {offer.offeredAt} - {offer.renewable}</small>
+                  <small><strong>Requirements:</strong> {offer.requirements}</small>
+                  {offer.notes ? <small>{offer.notes}</small> : null}
+                </div>
+              ))}
+              {!scholarshipOffers.length ? <p className="muted-copy">No offered scholarships are tracked for this student yet.</p> : null}
+            </div>
+          </article>
+
+          <article className="panel checklist-panel">
+            <div className="panel-header">
+              <div>
+                <h3>Ranked scholarship matches</h3>
+                <p>Each option explains what matched and what still needs confirmation.</p>
+              </div>
+            </div>
+            <div className="stack-list">
+              {scholarshipMatches.map((scholarship) => (
+                <div key={scholarship.id} className="stack-row handoff-stack-row">
+                  <strong>{scholarship.name}</strong>
+                  <span>{scholarship.amount} - {scholarship.status} - {scholarship.matchScore}% match</span>
+                  <small>{scholarship.description}</small>
+                  <small><strong>Evidence:</strong> {scholarship.evidence.join(' ')}</small>
+                  {scholarship.missing.length ? <small><strong>Needs:</strong> {scholarship.missing.join(', ')}</small> : null}
+                  <small><strong>Next:</strong> {scholarship.action}</small>
+                </div>
+              ))}
+              {!scholarshipMatches.length ? <p className="muted-copy">No scholarship options are available for this student yet.</p> : null}
+            </div>
+          </article>
+        </section>
       ) : null}
 
       {activeTab === 'timeline' ? (
