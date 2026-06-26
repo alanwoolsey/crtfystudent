@@ -34,6 +34,10 @@ export function getStoredDocumentId(payload) {
   return payload?.document_id || payload?.documentId || payload?.id || ''
 }
 
+export function getStoredDocumentContentLocation(payload) {
+  return payload?.content_url || payload?.contentUrl || payload?.content?.url || ''
+}
+
 export async function parseDocumentStorageResponse(response) {
   const text = await response.text()
   if (!text) return null
@@ -79,6 +83,7 @@ export async function uploadStoredDocument(file, options = {}) {
   return {
     provider: activeDocumentStorageProvider.id,
     documentId,
+    contentUrl: getStoredDocumentContentLocation(payload),
     documentType,
     department,
     payload,
@@ -100,6 +105,13 @@ export function getStoredDocumentDownloadUrl(documentId) {
 export async function fetchStoredDocumentContent(documentId, options = {}) {
   const department = options.department || 'General'
   return fetch(getStoredDocumentContentUrl(documentId), {
+    headers: buildDocumentStorageHeaders({ department }),
+  })
+}
+
+export async function fetchStoredDocumentContentUrl(contentUrl, options = {}) {
+  const department = options.department || 'General'
+  return fetch(contentUrl, {
     headers: buildDocumentStorageHeaders({ department }),
   })
 }

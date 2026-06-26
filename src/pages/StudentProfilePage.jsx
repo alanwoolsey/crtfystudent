@@ -14,7 +14,7 @@ import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
-import { activeDocumentStorageProvider, fetchStoredDocumentContent } from '../lib/documentStorage'
+import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl } from '../lib/documentStorage'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
@@ -510,20 +510,67 @@ function getTranscriptDocumentUrl(transcript) {
   )
 }
 
-function getTranscriptDocumentUploadId(transcript) {
-  const storedDocumentId = getFirstValue(
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
+function isNumericDocumentId(value) {
+  return /^\d+$/.test(String(value || '').trim())
+}
+
+function getTranscriptDocumentContentUrl(transcript) {
+  return getFirstValue(
+    transcript?.documentContentUrl,
+    transcript?.document_content_url,
+    transcript?.contentUrl,
+    transcript?.content_url,
+    transcript?.documentStorage?.contentUrl,
+    transcript?.documentStorage?.content_url,
+    transcript?.rawDocument?.documentContentUrl,
+    transcript?.rawDocument?.document_content_url,
+    transcript?.rawDocument?.contentUrl,
+    transcript?.rawDocument?.content_url,
+    transcript?.rawDocument?.documentStorage?.contentUrl,
+    transcript?.rawDocument?.documentStorage?.content_url,
+    transcript?.rawDocument?.metadata?.documentContentUrl,
+    transcript?.rawDocument?.metadata?.document_content_url,
+    transcript?.rawDocument?.metadata?.contentUrl,
+    transcript?.rawDocument?.metadata?.content_url,
+  )
+}
+
+function getTranscriptCrtfyDocumentsId(transcript) {
+  const candidates = [
     transcript?.crtfyDocumentId,
     transcript?.crtfy_document_id,
     transcript?.documentId,
     transcript?.document_id,
+    transcript?.documentUploadId,
+    transcript?.document_upload_id,
     transcript?.documentStorage?.documentId,
     transcript?.documentStorage?.document_id,
     transcript?.rawDocument?.crtfyDocumentId,
     transcript?.rawDocument?.crtfy_document_id,
+    transcript?.rawDocument?.documentId,
+    transcript?.rawDocument?.document_id,
+    transcript?.rawDocument?.documentUploadId,
+    transcript?.rawDocument?.document_upload_id,
     transcript?.rawDocument?.documentStorage?.documentId,
     transcript?.rawDocument?.documentStorage?.document_id,
-  )
-  if (storedDocumentId) return storedDocumentId
+    transcript?.rawDocument?.metadata?.crtfyDocumentId,
+    transcript?.rawDocument?.metadata?.crtfy_document_id,
+    transcript?.rawDocument?.metadata?.documentId,
+    transcript?.rawDocument?.metadata?.document_id,
+    transcript?.rawDocument?.metadata?.documentUploadId,
+    transcript?.rawDocument?.metadata?.document_upload_id,
+  ]
+
+  return candidates.find(isNumericDocumentId) || ''
+}
+
+function getTranscriptDocumentUploadId(transcript) {
+  const crtfyDocumentsId = getTranscriptCrtfyDocumentsId(transcript)
+  if (crtfyDocumentsId) return crtfyDocumentsId
 
   const rawDocumentId = getFirstValue(
     transcript?.rawDocument?.documentId,
@@ -563,16 +610,47 @@ function getTranscriptDocumentUploadId(transcript) {
   return uploadAlias
 }
 
+function getTranscriptLegacyDocumentId(transcript) {
+  const candidates = [
+    transcript?.documentUploadId,
+    transcript?.document_upload_id,
+    transcript?.documentId,
+    transcript?.document_id,
+    transcript?.rawDocument?.documentUploadId,
+    transcript?.rawDocument?.document_upload_id,
+    transcript?.rawDocument?.documentId,
+    transcript?.rawDocument?.document_id,
+    transcript?.rawDocument?.metadata?.documentUploadId,
+    transcript?.rawDocument?.metadata?.document_upload_id,
+    transcript?.rawDocument?.metadata?.documentId,
+    transcript?.rawDocument?.metadata?.document_id,
+  ]
+
+  return candidates.find((value) => value && !isNumericDocumentId(value)) || ''
+}
+
 function getTranscriptDocumentStorageProvider(transcript) {
   return getFirstValue(
     transcript?.documentStorageProvider,
     transcript?.document_storage_provider,
+    transcript?.storageProvider,
+    transcript?.storage_provider,
     transcript?.documentStorage?.provider,
     transcript?.document_storage?.provider,
+    transcript?.metadata?.documentStorageProvider,
+    transcript?.metadata?.document_storage_provider,
+    transcript?.metadata?.storageProvider,
+    transcript?.metadata?.storage_provider,
     transcript?.rawDocument?.documentStorageProvider,
     transcript?.rawDocument?.document_storage_provider,
+    transcript?.rawDocument?.storageProvider,
+    transcript?.rawDocument?.storage_provider,
     transcript?.rawDocument?.documentStorage?.provider,
     transcript?.rawDocument?.document_storage?.provider,
+    transcript?.rawDocument?.metadata?.documentStorageProvider,
+    transcript?.rawDocument?.metadata?.document_storage_provider,
+    transcript?.rawDocument?.metadata?.storageProvider,
+    transcript?.rawDocument?.metadata?.storage_provider,
   )
 }
 
@@ -1355,7 +1433,10 @@ export default function StudentProfilePage() {
     let objectUrl = ''
 
     async function loadDocumentViewer() {
-      const documentUploadId = getTranscriptDocumentUploadId(selectedTranscript)
+      const crtfyDocumentsId = getTranscriptCrtfyDocumentsId(selectedTranscript)
+      const crtfyDocumentsContentUrl = getTranscriptDocumentContentUrl(selectedTranscript)
+      const legacyDocumentId = getTranscriptLegacyDocumentId(selectedTranscript)
+      const documentUploadId = crtfyDocumentsId || legacyDocumentId
       const fallbackUrl = getTranscriptDocumentUrl(selectedTranscript)
 
       setDocumentViewerError('')
@@ -1364,7 +1445,7 @@ export default function StudentProfilePage() {
 
       if (!selectedTranscript) return
 
-      if (!documentUploadId) {
+      if (!documentUploadId && !crtfyDocumentsContentUrl) {
         if (fallbackUrl) setDocumentViewerUrl(fallbackUrl)
         else setDocumentViewerError('No document upload ID was returned for this transcript.')
         return
@@ -1380,22 +1461,24 @@ export default function StudentProfilePage() {
         const storageProvider = getTranscriptDocumentStorageProvider(selectedTranscript)
         let response = null
 
-        if (storageProvider === activeDocumentStorageProvider.id || !storageProvider) {
-          try {
-            response = await fetchStoredDocumentContent(documentUploadId, {
-              department: getTranscriptDocumentStorageDepartment(selectedTranscript),
-            })
-          } catch (error) {
-            if (storageProvider === activeDocumentStorageProvider.id) throw error
-          }
+        if (crtfyDocumentsContentUrl) {
+          response = await fetchStoredDocumentContentUrl(crtfyDocumentsContentUrl, {
+            department: getTranscriptDocumentStorageDepartment(selectedTranscript),
+          })
+        } else if (crtfyDocumentsId) {
+          response = await fetchStoredDocumentContent(crtfyDocumentsId, {
+            department: getTranscriptDocumentStorageDepartment(selectedTranscript),
+          })
+        } else if (storageProvider === activeDocumentStorageProvider.id) {
+          throw new Error('This transcript is marked as crtfy Documents-backed, but no numeric crtfy Documents document_id or content_url was saved.')
+        } else if (legacyDocumentId && isUuidLike(legacyDocumentId)) {
+          response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${legacyDocumentId}/content`)
+        } else if (legacyDocumentId) {
+          response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${legacyDocumentId}/content`)
         }
 
-        if ((!response || !response.ok) && storageProvider !== activeDocumentStorageProvider.id) {
-          response = await fetchWithTenantAuth(`${apiBaseUrl}/api/v1/documents/${documentUploadId}/content`)
-        }
-
-        if (!response.ok) {
-          throw new Error(`Document load failed: ${response.status}`)
+        if (!response?.ok) {
+          throw new Error(`Document load failed: ${response?.status || 'no response'}`)
         }
 
         const blob = await response.blob()

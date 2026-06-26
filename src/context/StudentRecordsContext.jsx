@@ -219,6 +219,7 @@ function mapParsedTranscript(parsed, file, storedDocument = null) {
     documentStorageProvider: storedDocument?.provider || parsed.documentStorageProvider || '',
     documentStorageDepartment: storedDocument?.department || parsed.documentStorageDepartment || '',
     documentStorageType: storedDocument?.documentType || parsed.documentStorageType || '',
+    documentContentUrl: storedDocument?.contentUrl || parsed.documentContentUrl || parsed.content_url || '',
     institution: institutionName,
     type: typeLabel.charAt(0).toUpperCase() + typeLabel.slice(1),
     uploadedAt: new Date().toISOString(),
@@ -238,6 +239,8 @@ function mapParsedTranscript(parsed, file, storedDocument = null) {
       documentStorageProvider: storedDocument.provider,
       documentStorageDepartment: storedDocument.department,
       documentStorageType: storedDocument.documentType,
+      documentContentUrl: storedDocument.contentUrl,
+      content_url: storedDocument.contentUrl,
       documentStorage: storedDocument,
     } : parsed,
   }
@@ -510,6 +513,7 @@ export function StudentRecordsProvider({ children }) {
     formData.append('storage_provider', storedDocument.provider)
     formData.append('document_id', storedDocument.documentId)
     formData.append('crtfy_documents_document_id', storedDocument.documentId)
+    if (storedDocument.contentUrl) formData.append('content_url', storedDocument.contentUrl)
     formData.append('skip_storage', 'true')
     formData.append('source', 'crtfy_student')
 
