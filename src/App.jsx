@@ -182,6 +182,12 @@ export default function App() {
     || [session?.first_name || session?.given_name, session?.last_name || session?.family_name].filter(Boolean).join(' ').trim()
     || session?.email
     || session?.username
+  const tenantDisplayName = currentUser?.tenantName
+    || session?.tenant_name
+    || session?.tenantName
+    || session?.tenant_code
+    || session?.tenantCode
+    || 'Workspace'
 
   const routeLabel = useMemo(() => {
     const match = navItems.find((item) => item.to === location.pathname)
@@ -457,6 +463,7 @@ export default function App() {
               >
                 <UserCircle2 size={18} />
                 <div>
+                  <span>{tenantDisplayName}</span>
                   <strong>{userDisplayName}</strong>
                 </div>
                 <ChevronDown size={16} />
