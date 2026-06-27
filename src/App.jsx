@@ -53,6 +53,7 @@ const idleUploadState = {
   state: 'idle',
   mode: null,
   transcriptId: null,
+  documentUploadId: null,
   batchId: null,
   batchItems: [],
   batchProgress: null,
@@ -254,6 +255,7 @@ export default function App() {
       state: 'uploading',
       mode: isZipUpload ? 'batch' : 'single',
       transcriptId: null,
+      documentUploadId: null,
       batchId: null,
       batchItems: [],
       batchProgress: null,
@@ -277,6 +279,7 @@ export default function App() {
           state: 'completed',
           mode: 'batch',
           transcriptId: result.transcriptId || null,
+          documentUploadId: result.documentUploadId || null,
           batchId: result.batchId || null,
           batchItems: result.batchItems || [],
           batchProgress: result.batchProgress || null,
@@ -289,6 +292,7 @@ export default function App() {
           state: 'completed',
           mode: 'single',
           transcriptId: result.transcriptId || null,
+          documentUploadId: result.documentUploadId || null,
           batchId: null,
           batchItems: [],
           batchProgress: null,
@@ -530,6 +534,7 @@ export default function App() {
               </button>
             </div>
             {uploadState.transcriptId ? <p className="upload-job-id">Transcript ID: {uploadState.transcriptId}</p> : null}
+            {uploadState.documentUploadId ? <p className="upload-job-id">ECM document ID: {uploadState.documentUploadId}</p> : null}
             {uploadState.batchId ? <p className="upload-job-id">Batch ID: {uploadState.batchId}</p> : null}
             {uploadState.batchProgress ? (
               <>

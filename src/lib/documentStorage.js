@@ -1,4 +1,8 @@
 const crtfyDocumentsBaseUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_URL || 'https://api.crtfydocuments.com').replace(/\/+$/, '')
+const documentStorageTenantId = import.meta.env.VITE_DOCUMENT_STORAGE_TENANT_ID || 'demo'
+const documentStorageActor = import.meta.env.VITE_DOCUMENT_STORAGE_ACTOR || 'crtfy-student'
+const documentStorageUserEmail = import.meta.env.VITE_DOCUMENT_STORAGE_USER_EMAIL || 'system@crtfystudent.com'
+const documentStorageRole = import.meta.env.VITE_DOCUMENT_STORAGE_ROLE || 'admin'
 
 export const activeDocumentStorageProvider = {
   id: 'crtfy_documents',
@@ -11,10 +15,10 @@ export const activeDocumentStorageProvider = {
 
 export function buildDocumentStorageHeaders(overrides = {}) {
   return {
-    'X-Tenant-Id': overrides.tenantId || 'demo',
-    'X-Actor': overrides.actor || 'crtfy-student',
-    'X-User-Email': overrides.userEmail || 'system@crtfystudent.com',
-    'X-Role': overrides.role || 'admin',
+    'X-Tenant-Id': overrides.tenantId || documentStorageTenantId,
+    'X-Actor': overrides.actor || documentStorageActor,
+    'X-User-Email': overrides.userEmail || documentStorageUserEmail,
+    'X-Role': overrides.role || documentStorageRole,
     'X-Department': overrides.department || 'General',
   }
 }
@@ -84,7 +88,7 @@ export async function uploadStoredDocument(file, options = {}) {
     provider: activeDocumentStorageProvider.id,
     documentId,
     contentUrl: getStoredDocumentContentLocation(payload),
-    tenantId: options.tenantId || 'demo',
+    tenantId: options.tenantId || documentStorageTenantId,
     documentType,
     department,
     payload,

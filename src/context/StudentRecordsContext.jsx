@@ -496,7 +496,7 @@ export function StudentRecordsProvider({ children }) {
       personId: options.personId || options.crtfyDocumentsPersonId,
       tags: options.tags,
       notes: options.notes,
-      tenantId: session.tenant_id,
+      tenantId: options.crtfyDocumentsTenantId,
     })
 
     onStateChange({
