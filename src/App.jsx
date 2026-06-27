@@ -405,7 +405,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="brand-mark">
-          <img className="brand-logo" src="/logos/crtfy-student.svg" alt="crtfy student" />
+          <img className="brand-logo" src="/logos/crtfy-student.png" alt="crtfy student" />
         </div>
 
         <div className="topbar-main">

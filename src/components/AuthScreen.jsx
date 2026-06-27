@@ -67,7 +67,7 @@ export default function AuthScreen() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <img className="auth-logo" src="/logos/crtfy-student.svg" alt="crtfy student" />
+          <img className="auth-logo" src="/logos/crtfy-student.png" alt="crtfy student" />
           <div className="auth-copy">
             <p className="eyebrow">Secure access</p>
             <h1>{panelTitle}</h1>

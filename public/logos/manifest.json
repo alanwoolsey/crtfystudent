@@ -1,7 +1,7 @@
 {
   "brand": [
     { "name": "crtfy", "file": "/logos/crtfy.svg" },
-    { "name": "crtfy student", "file": "/logos/crtfy-student.svg" }
+    { "name": "crtfy student", "file": "/logos/crtfy-student.png" }
   ],
   "offerings": [
     { "name": "Command Center", "file": "/logos/crtfy-command-center.svg" },
