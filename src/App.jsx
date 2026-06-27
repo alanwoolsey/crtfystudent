@@ -417,7 +417,7 @@ export default function App() {
         <div className="topbar-main">
           <div>
             <div className="breadcrumbs">
-              <span>Enrollment OS</span>
+              <span>crtfy Student</span>
               <ChevronRight size={14} />
               <span>{routeLabel}</span>
             </div>
@@ -432,6 +432,10 @@ export default function App() {
           </div>
 
           <div className="topbar-actions">
+            <div className="tenant-pill" title={tenantDisplayName}>
+              <span>Tenant</span>
+              <strong>{tenantDisplayName}</strong>
+            </div>
             <div className="upload-action">
               <input ref={fileInputRef} type="file" className="file-input-hidden" onChange={handleFileChange} />
               <button
@@ -463,7 +467,6 @@ export default function App() {
               >
                 <UserCircle2 size={18} />
                 <div>
-                  <span>{tenantDisplayName}</span>
                   <strong>{userDisplayName}</strong>
                 </div>
                 <ChevronDown size={16} />

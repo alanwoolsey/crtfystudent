@@ -201,7 +201,32 @@ button { cursor: pointer; }
   outline: none;
   background: transparent;
 }
-.topbar-actions { display: flex; align-items: end; gap: 12px; }
+.topbar-actions { display: flex; align-items: center; gap: 12px; }
+.tenant-pill {
+  min-height: 44px;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 8px 15px;
+  background: rgba(255,255,255,0.86);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+}
+.tenant-pill span {
+  color: #10245f;
+  font-weight: 700;
+  font-size: 0.84rem;
+}
+.tenant-pill strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0f2d78;
+  font-size: 0.9rem;
+}
 .upload-status-chip {
   border: 1px solid var(--border);
   background: var(--panel-solid);
@@ -251,7 +276,7 @@ button { cursor: pointer; }
   position: relative;
 }
 .user-pill {
-  display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 18px; background: var(--panel-solid); border: 1px solid var(--border); max-width: 260px;
+  min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 18px; background: var(--panel-solid); border: 1px solid var(--border); max-width: 260px;
 }
 .user-pill div {
   min-width: 0;
@@ -270,7 +295,7 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 .user-pill span { color: var(--muted); font-size: 0.78rem; line-height: 1.15; }
-.user-pill strong { color: var(--text); font-size: 0.92rem; line-height: 1.2; }
+.user-pill strong { color: var(--ink); font-size: 0.95rem; line-height: 1.2; }
 .user-menu-dropdown {
   position: absolute;
   top: calc(100% + 10px);
