@@ -83,9 +83,9 @@ button { cursor: pointer; }
 
 .app-shell {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 272px 1fr;
   grid-template-rows: auto 1fr;
-  grid-template-areas: "topbar topbar" "sidebar main";
+  grid-template-areas: "sidebar topbar" "sidebar main";
   min-height: 100vh;
 }
 .topbar {
@@ -94,8 +94,8 @@ button { cursor: pointer; }
   justify-content: space-between;
   gap: 18px;
   align-items: center;
-  padding: 10px 22px;
-  background: rgba(255,255,255,0.9);
+  padding: 14px 22px;
+  background: rgba(248,250,255,0.92);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   position: sticky;
@@ -125,17 +125,27 @@ button { cursor: pointer; }
 .brand-logo { display: block; width: 172px; max-width: 100%; height: auto; object-fit: contain; }
 .sidebar {
   grid-area: sidebar;
-  padding: 24px 18px;
-  background: radial-gradient(circle at top left, #14213d, #0d1530 70%);
-  color: #eef4ff;
+  padding: 26px 16px;
+  background: #ffffff;
+  color: #10245f;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 26px;
   position: sticky;
-  top: 72px;
+  top: 0;
   align-self: start;
-  height: calc(100vh - 72px);
+  height: 100vh;
   overflow: auto;
+  border-right: 1px solid var(--border);
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-height: 64px;
+  padding: 0 2px 10px;
+}
+.sidebar-brand .brand-logo {
+  width: min(222px, 100%);
 }
 .eyebrow {
   margin: 0 0 6px;
@@ -145,17 +155,29 @@ button { cursor: pointer; }
   color: #7e93d3;
   font-weight: 700;
 }
-.nav-list { display: grid; gap: 8px; }
+.nav-list { display: grid; gap: 10px; }
 .nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  color: #cdd9ff;
-  transition: 0.25s ease;
+  min-height: 45px;
+  padding: 12px 16px;
+  border-radius: 13px;
+  color: #60728f;
+  font-weight: 500;
+  transition: background 0.18s ease, color 0.18s ease;
 }
-.nav-item.active, .nav-item:hover { background: rgba(255,255,255,0.1); color: white; }
+.nav-item svg {
+  flex: 0 0 auto;
+  color: #6f7f98;
+}
+.nav-item.active, .nav-item:hover {
+  background: #edf2ff;
+  color: #143b95;
+}
+.nav-item.active svg, .nav-item:hover svg {
+  color: #143b95;
+}
 .main-panel { grid-area: main; padding: 22px 26px 36px; }
 .page-wrap { display: grid; gap: 22px; }
 .section-header { display: flex; justify-content: space-between; gap: 20px; align-items: end; }

@@ -178,6 +178,11 @@ export default function App() {
   const [previousPassword, setPreviousPassword] = useState('')
   const [proposedPassword, setProposedPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const userDisplayName = currentUser?.displayName
+    || session?.displayName
+    || [session?.first_name || session?.given_name, session?.last_name || session?.family_name].filter(Boolean).join(' ').trim()
+    || session?.email
+    || session?.username
 
   const routeLabel = useMemo(() => {
     const match = navItems.find((item) => item.to === location.pathname)
@@ -404,10 +409,6 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand-mark">
-          <img className="brand-logo" src="/logos/crtfy-student.png" alt="crtfy student" />
-        </div>
-
         <div className="topbar-main">
           <div>
             <div className="breadcrumbs">
@@ -457,7 +458,7 @@ export default function App() {
               >
                 <UserCircle2 size={18} />
                 <div>
-                  <strong>{currentUser?.displayName || session.username}</strong>
+                  <strong>{userDisplayName}</strong>
                 </div>
                 <ChevronDown size={16} />
               </button>
@@ -481,8 +482,10 @@ export default function App() {
       </header>
 
       <aside className="sidebar">
+        <div className="sidebar-brand">
+          <img className="brand-logo" src="/logos/crtfy-student.png" alt="crtfy student" />
+        </div>
         <div className="sidebar-section">
-          <p className="eyebrow">Platform</p>
           <nav className="nav-list">
             {visibleNavItems.map(({ to, label, icon: Icon }) => (
               <NavLink key={to} to={to} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
@@ -592,7 +595,7 @@ export default function App() {
             <div className="panel-header">
               <div>
                 <h3>Change password</h3>
-                <p>{session.username}</p>
+                <p>{userDisplayName}</p>
               </div>
               <button type="button" className="icon-button" onClick={closeChangePasswordModal} aria-label="Close change password">
                 <X size={18} />

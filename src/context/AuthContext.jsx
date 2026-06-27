@@ -60,9 +60,41 @@ function getAuthErrorMessage(status, payload) {
   return payload?.message || payload?.detail || 'Authentication failed.'
 }
 
+function decodeJwtClaims(token) {
+  if (!token || typeof token !== 'string') return {}
+
+  try {
+    const [, payload] = token.split('.')
+    if (!payload) return {}
+    const normalizedPayload = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const paddedPayload = normalizedPayload.padEnd(normalizedPayload.length + ((4 - normalizedPayload.length % 4) % 4), '=')
+    return JSON.parse(globalThis.atob(paddedPayload))
+  } catch {
+    return {}
+  }
+}
+
+function getDisplayNameFromParts(...sources) {
+  const firstNameSource = sources.find((source) => source?.first_name || source?.given_name)
+  const lastNameSource = sources.find((source) => source?.last_name || source?.family_name)
+  const firstName = firstNameSource?.first_name || firstNameSource?.given_name || ''
+  const lastName = lastNameSource?.last_name || lastNameSource?.family_name || ''
+  return [firstName, lastName].filter(Boolean).join(' ').trim()
+}
+
 function normalizeSession(payload, username) {
+  const claims = decodeJwtClaims(payload.id_token || payload.access_token)
+  const displayName = getDisplayNameFromParts(payload, claims)
+
   return {
     username,
+    first_name: payload.first_name || payload.given_name || claims.given_name,
+    last_name: payload.last_name || payload.family_name || claims.family_name,
+    given_name: payload.given_name || payload.first_name || claims.given_name,
+    family_name: payload.family_name || payload.last_name || claims.family_name,
+    email: payload.email || claims.email,
+    name: payload.name || claims.name || displayName,
+    displayName: payload.displayName || payload.display_name || displayName || payload.name || claims.name || payload.email || claims.email || username,
     tenant_id: payload.tenant_id || payload.tenantId,
     tenant_name: payload.tenant_name || payload.tenantName,
     tenant_code: payload.tenant_code || payload.tenantCode || payload.tenantSlug,
@@ -102,10 +134,16 @@ function normalizeScopes(scopes) {
 function normalizeCurrentUser(payload) {
   if (!payload || typeof payload !== 'object') return null
 
+  const displayName = payload.displayName
+    || payload.display_name
+    || getDisplayNameFromParts(payload)
+    || payload.name
+    || payload.email
+
   return {
     ...payload,
     userId: payload.userId || payload.user_id || payload.id,
-    displayName: payload.displayName || payload.display_name || payload.name || payload.email,
+    displayName,
     tenantId: payload.tenantId || payload.tenant_id,
     tenantSlug: payload.tenantSlug || payload.tenant_slug || payload.tenant_code,
     tenantName: payload.tenantName || payload.tenant_name,
