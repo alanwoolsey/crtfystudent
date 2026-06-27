@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from './AuthContext'
-import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS, normalizePipelineStatus } from '../lib/admissionsWorkflow'
+import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS, PIPELINE_STATUSES, normalizePipelineStatus } from '../lib/admissionsWorkflow'
 import { uploadStoredDocument } from '../lib/documentStorage'
 import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
@@ -112,6 +112,45 @@ function normalizeStudentDetailPayload(payload) {
   if (!payload || typeof payload !== 'object') return null
   const student = payload.student && typeof payload.student === 'object' ? payload.student : payload
   return normalizeStudentsPayload([student])[0] || null
+}
+
+function buildCreatedStudent(input) {
+  const firstName = normalizeStudentValue(input.firstName || input.first_name, '').trim()
+  const lastName = normalizeStudentValue(input.lastName || input.last_name, '').trim()
+  const name = normalizeStudentValue(input.name, '').trim() || [firstName, lastName].filter(Boolean).join(' ').trim()
+  const email = normalizeStudentValue(input.email, '').trim()
+  const createdAt = new Date().toISOString()
+
+  return normalizeStudentDetailPayload({
+    id: normalizeStudentValue(input.id || input.studentId || input.student_id, '').trim() || `STU-${Date.now()}`,
+    studentId: normalizeStudentValue(input.studentId || input.student_id || input.id, '').trim(),
+    firstName,
+    lastName,
+    name: name || email || 'New Student',
+    preferredName: firstName,
+    email,
+    phone: normalizeStudentValue(input.phone, '').trim(),
+    program: normalizeStudentValue(input.program || input.programInterest || input.program_interest, 'Program pending').trim(),
+    programInterest: normalizeStudentValue(input.programInterest || input.program_interest || input.program, '').trim(),
+    termInterest: normalizeStudentValue(input.termInterest || input.term_interest, '').trim(),
+    institutionGoal: normalizeStudentValue(input.institutionGoal || input.institution_goal, '').trim(),
+    stage: input.stage || PIPELINE_STATUSES.inquiry,
+    risk: input.risk || 'Low',
+    advisor: normalizeStudentValue(input.advisor || input.owner, 'Unassigned').trim(),
+    population: normalizeStudentValue(input.population || input.studentType || input.student_type, '').trim(),
+    source: normalizeStudentValue(input.source || input.leadSource || input.lead_source, '').trim(),
+    city: normalizeStudentValue(input.city, '').trim(),
+    transcriptsCount: 0,
+    fitScore: null,
+    depositLikelihood: null,
+    lastActivity: 'Just now',
+    createdAt,
+    updatedAt: createdAt,
+    tags: ['Manually created'],
+    summary: 'Student record created manually in Student 360.',
+    checklist: [],
+    transcripts: [],
+  })
 }
 
 function buildTranscriptSteps(audit = []) {
@@ -459,6 +498,63 @@ export function StudentRecordsProvider({ children }) {
     } finally {
       setIsLoadingStudents(false)
     }
+  }, [fetchWithTenantAuth, session])
+
+  const createStudent = useCallback(async (input = {}) => {
+    const nextStudent = buildCreatedStudent(input)
+    if (!nextStudent?.name || nextStudent.name === 'New Student') {
+      throw new Error('Student first name and last name are required.')
+    }
+    if (!nextStudent.email) {
+      throw new Error('Student email is required.')
+    }
+
+    if (!session?.access_token || !session?.tenant_id) {
+      setStudents((current) => [nextStudent, ...current.filter((student) => student.id !== nextStudent.id)])
+      return nextStudent
+    }
+
+    const payload = {
+      ...input,
+      id: input.id || input.studentId || nextStudent.id,
+      studentId: input.studentId || input.id || nextStudent.id,
+      name: nextStudent.name,
+      firstName: input.firstName || input.first_name || '',
+      lastName: input.lastName || input.last_name || '',
+      email: nextStudent.email,
+      phone: nextStudent.phone,
+      program: nextStudent.program,
+      programInterest: nextStudent.programInterest,
+      termInterest: nextStudent.termInterest,
+      institutionGoal: nextStudent.institutionGoal,
+      stage: nextStudent.stage,
+      advisor: nextStudent.advisor,
+      owner: nextStudent.advisor,
+      population: nextStudent.population,
+      source: nextStudent.source,
+    }
+
+    const response = await fetchWithTenantAuth(studentsUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+    const responsePayload = await parseApiPayload(response)
+
+    if (response.status === 404 || response.status === 405) {
+      setStudents((current) => [nextStudent, ...current.filter((student) => student.id !== nextStudent.id)])
+      return nextStudent
+    }
+
+    if (!response.ok) {
+      throw new Error(getStudentsErrorMessage(response, responsePayload))
+    }
+
+    const createdStudent = normalizeStudentDetailPayload(responsePayload) || nextStudent
+    setStudents((current) => [createdStudent, ...current.filter((student) => student.id !== createdStudent.id)])
+    return createdStudent
   }, [fetchWithTenantAuth, session])
 
   useEffect(() => {
@@ -1260,6 +1356,7 @@ export function StudentRecordsProvider({ children }) {
     isLoadingStudents,
     studentsError,
     loadStudents,
+    createStudent,
     normalizeStudentDetailPayload,
     loadStudentChecklist,
     updateChecklistItemStatus,
@@ -1271,7 +1368,7 @@ export function StudentRecordsProvider({ children }) {
     updateStudentMilestone,
     logRecruitmentEvent,
     uploadTranscript,
-  }), [addStudentInteraction, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadTranscript])
+  }), [addStudentInteraction, createStudent, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

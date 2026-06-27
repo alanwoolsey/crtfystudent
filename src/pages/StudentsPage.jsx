@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { Plus, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
@@ -7,6 +8,20 @@ import { PIPELINE_STATUSES, PIPELINE_STATUS_MEANINGS } from '../lib/admissionsWo
 import useDebouncedValue from '../lib/useDebouncedValue'
 
 const studentsPerPage = 8
+const initialStudentForm = {
+  studentId: '',
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  program: '',
+  termInterest: '',
+  stage: PIPELINE_STATUSES.inquiry,
+  advisor: '',
+  population: '',
+  source: '',
+  institutionGoal: '',
+}
 const pipelineStatusMeanings = Object.fromEntries(PIPELINE_STATUS_MEANINGS.map((item) => [item.status, item.meaning]))
 const quickFilters = [
   { key: 'all', label: 'All students' },
@@ -32,11 +47,15 @@ function getDisplayValue(value, fallback = '') {
 }
 
 export default function StudentsPage() {
-  const { students, isLoadingStudents, studentsError, loadStudents } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudents, createStudent } = useStudentRecords()
   const [searchParams, setSearchParams] = useSearchParams()
   const [query, setQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState('all')
   const [page, setPage] = useState(1)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [studentForm, setStudentForm] = useState(initialStudentForm)
+  const [createError, setCreateError] = useState('')
+  const [isSavingStudent, setIsSavingStudent] = useState(false)
   const debouncedQuery = useDebouncedValue(query, 350)
 
   useEffect(() => {
@@ -49,6 +68,43 @@ export default function StudentsPage() {
     if (nextQuery.trim()) nextParams.set('q', nextQuery)
     else nextParams.delete('q')
     setSearchParams(nextParams, { replace: true })
+  }
+
+  function updateStudentForm(field, value) {
+    setStudentForm((current) => ({ ...current, [field]: value }))
+  }
+
+  function openCreateModal() {
+    setStudentForm(initialStudentForm)
+    setCreateError('')
+    setIsCreateModalOpen(true)
+  }
+
+  function closeCreateModal() {
+    if (isSavingStudent) return
+    setIsCreateModalOpen(false)
+    setCreateError('')
+  }
+
+  async function handleCreateStudentSubmit(event) {
+    event.preventDefault()
+    setCreateError('')
+    setIsSavingStudent(true)
+
+    try {
+      await createStudent(studentForm)
+      setIsCreateModalOpen(false)
+      setStudentForm(initialStudentForm)
+      setQuery('')
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('q')
+      setSearchParams(nextParams, { replace: true })
+      setActiveFilter('all')
+    } catch (error) {
+      setCreateError(error.message || 'Unable to create student.')
+    } finally {
+      setIsSavingStudent(false)
+    }
   }
 
   useEffect(() => {
@@ -104,6 +160,12 @@ export default function StudentsPage() {
       <SectionHeader
         eyebrow="Canonical student record"
         title="Student 360"
+        actions={(
+          <button type="button" className="primary-button" onClick={openCreateModal}>
+            <Plus size={16} />
+            <span>Add student</span>
+          </button>
+        )}
         subtitle="Every upload, fit score, trust signal, and next-best action belongs to one student record — not a loose pile of files."
       />
 
@@ -183,6 +245,88 @@ export default function StudentsPage() {
             </article>
           )}
         </>
+      ) : null}
+
+      {isCreateModalOpen ? (
+        <div className="modal-scrim" onClick={closeCreateModal} role="presentation">
+          <div className="modal-panel create-student-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>Add student</h3>
+                <p>Create the minimum Student 360 record needed to start admissions work.</p>
+              </div>
+              <button type="button" className="icon-button" onClick={closeCreateModal} aria-label="Close add student">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form className="auth-form create-student-form" onSubmit={handleCreateStudentSubmit}>
+              <div className="create-student-grid">
+                <label className="auth-field">
+                  <span>First name</span>
+                  <input value={studentForm.firstName} onChange={(event) => updateStudentForm('firstName', event.target.value)} required />
+                </label>
+                <label className="auth-field">
+                  <span>Last name</span>
+                  <input value={studentForm.lastName} onChange={(event) => updateStudentForm('lastName', event.target.value)} required />
+                </label>
+                <label className="auth-field">
+                  <span>Email</span>
+                  <input type="email" value={studentForm.email} onChange={(event) => updateStudentForm('email', event.target.value)} required />
+                </label>
+                <label className="auth-field">
+                  <span>Phone</span>
+                  <input value={studentForm.phone} onChange={(event) => updateStudentForm('phone', event.target.value)} />
+                </label>
+                <label className="auth-field">
+                  <span>Student ID</span>
+                  <input value={studentForm.studentId} onChange={(event) => updateStudentForm('studentId', event.target.value)} />
+                </label>
+                <label className="auth-field">
+                  <span>Lifecycle stage</span>
+                  <select value={studentForm.stage} onChange={(event) => updateStudentForm('stage', event.target.value)}>
+                    {quickFilters.filter((filter) => filter.key !== 'all').map((filter) => (
+                      <option key={filter.key} value={filter.key}>{filter.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="auth-field">
+                  <span>Program</span>
+                  <input value={studentForm.program} onChange={(event) => updateStudentForm('program', event.target.value)} />
+                </label>
+                <label className="auth-field">
+                  <span>Term</span>
+                  <input value={studentForm.termInterest} onChange={(event) => updateStudentForm('termInterest', event.target.value)} placeholder="Fall 2026" />
+                </label>
+                <label className="auth-field">
+                  <span>Owner / advisor</span>
+                  <input value={studentForm.advisor} onChange={(event) => updateStudentForm('advisor', event.target.value)} />
+                </label>
+                <label className="auth-field">
+                  <span>Population</span>
+                  <input value={studentForm.population} onChange={(event) => updateStudentForm('population', event.target.value)} placeholder="Transfer, first-year, adult learner" />
+                </label>
+                <label className="auth-field">
+                  <span>Source</span>
+                  <input value={studentForm.source} onChange={(event) => updateStudentForm('source', event.target.value)} placeholder="Manual entry, event, partner" />
+                </label>
+                <label className="auth-field">
+                  <span>Institution goal</span>
+                  <input value={studentForm.institutionGoal} onChange={(event) => updateStudentForm('institutionGoal', event.target.value)} />
+                </label>
+              </div>
+
+              {createError ? <p className="auth-error">{createError}</p> : null}
+
+              <div className="password-actions">
+                <button type="button" className="secondary-button" onClick={closeCreateModal} disabled={isSavingStudent}>Cancel</button>
+                <button type="submit" className="primary-button" disabled={isSavingStudent}>
+                  {isSavingStudent ? 'Saving...' : 'Save student'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       ) : null}
     </div>
   )
