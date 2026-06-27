@@ -47,7 +47,6 @@ import ReportingPage from './pages/ReportingPage'
 import AdminPage from './pages/AdminPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
-import { ROLE_KEYS } from './lib/rbac'
 
 const idleUploadState = {
   state: 'idle',
@@ -517,7 +516,7 @@ export default function App() {
           <Route path="/reporting" element={<ProtectedRoute access={{ permissions: ['view_dashboards'] }}><ReportingPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute anyAccess={[{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }, { permissions: ['platform_tenants_view'] }, { permissions: ['platform_users_view'] }, { permissions: ['platform_users_manage'] }]}><AdminPage /></ProtectedRoute>} />
           <Route path="/platform/tenants" element={<ProtectedRoute access={{ permissions: ['platform_tenants_view'] }}><PlatformTenantsPage /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute access={{ roles: [...ROLE_KEYS.counselor, ...ROLE_KEYS.processor, ...ROLE_KEYS.reviewer, ...ROLE_KEYS.director, ...ROLE_KEYS.trustAnalyst, ...ROLE_KEYS.registrarTransfer, ...ROLE_KEYS.financialAid, ...ROLE_KEYS.readOnly, ...ROLE_KEYS.integrationService] }}><UserProfilePage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
         </Routes>
       </main>
 
