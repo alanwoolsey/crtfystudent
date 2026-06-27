@@ -3,8 +3,6 @@ import { useSearchParams } from 'react-router-dom'
 import SectionHeader from '../components/SectionHeader'
 import StudentCard from '../components/StudentCard'
 import { useStudentRecords } from '../context/StudentRecordsContext'
-import { prospectSubmissions } from '../data/prospectSubmissions'
-import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
 import { PIPELINE_STATUSES, PIPELINE_STATUS_MEANINGS } from '../lib/admissionsWorkflow'
 import useDebouncedValue from '../lib/useDebouncedValue'
 
@@ -57,13 +55,9 @@ export default function StudentsPage() {
     loadStudents(debouncedQuery.trim()).catch(() => {})
   }, [debouncedQuery, loadStudents])
 
-  const displayStudents = useMemo(() => {
-    return mergeProspectsIntoStudents(students, prospectSubmissions)
-  }, [students])
-
   const filteredStudents = useMemo(() => {
     const search = query.trim().toLowerCase()
-    const quickFilteredStudents = displayStudents.filter((student) => {
+    const quickFilteredStudents = students.filter((student) => {
       const stage = String(student.stage || '')
       if (activeFilter !== 'all') return stage === activeFilter
       return true
@@ -89,11 +83,11 @@ export default function StudentsPage() {
 
       return haystack.includes(search)
     })
-  }, [activeFilter, displayStudents, query])
+  }, [activeFilter, query, students])
 
   useEffect(() => {
     setPage(1)
-  }, [activeFilter, query, displayStudents.length])
+  }, [activeFilter, query, students.length])
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / studentsPerPage))
   const currentPage = Math.min(page, totalPages)
@@ -141,7 +135,7 @@ export default function StudentsPage() {
         </section>
       ) : null}
 
-      {!isLoadingStudents && studentsError && !displayStudents.length ? (
+      {!isLoadingStudents && studentsError && !students.length ? (
         <section className="panel">
           <p className="auth-error">{studentsError}</p>
           <button type="button" className="secondary-button" onClick={() => loadStudents()}>
@@ -150,7 +144,7 @@ export default function StudentsPage() {
         </section>
       ) : null}
 
-      {!isLoadingStudents && (!studentsError || displayStudents.length) ? (
+      {!isLoadingStudents && (!studentsError || students.length) ? (
         <>
           {filteredStudents.length ? (
             <>
@@ -183,7 +177,9 @@ export default function StudentsPage() {
             </>
           ) : (
             <article className="panel">
-              <p className="muted-copy">No students match that filter.</p>
+              <p className="muted-copy">
+                {students.length ? 'No students match that filter.' : 'No students have been created for this tenant yet.'}
+              </p>
             </article>
           )}
         </>

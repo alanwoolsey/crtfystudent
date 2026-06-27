@@ -7,12 +7,10 @@ import TranscriptTimeline from '../components/TranscriptTimeline'
 import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { useAuth } from '../context/AuthContext'
-import { prospectSubmissions } from '../data/prospectSubmissions'
 import Can from '../components/Can'
 import ChecklistProgress from '../components/ChecklistProgress'
 import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
-import { mergeProspectsIntoStudents } from '../lib/prospectStudentRecords'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl } from '../lib/documentStorage'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
@@ -1474,8 +1472,7 @@ export default function StudentProfilePage() {
   const [documentViewerError, setDocumentViewerError] = useState('')
   const [isLoadingDocumentViewer, setIsLoadingDocumentViewer] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
-  const displayStudents = useMemo(() => mergeProspectsIntoStudents(students, prospectSubmissions), [students])
-  const summaryStudent = useMemo(() => displayStudents.find((item) => item.id === studentId) || null, [displayStudents, studentId])
+  const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [students, studentId])
   const visibleTabs = useMemo(() => {
     const tabs = [
       { key: 'overview', label: 'Overview', allowed: hasAnyPermission(['view_student_360']) },
