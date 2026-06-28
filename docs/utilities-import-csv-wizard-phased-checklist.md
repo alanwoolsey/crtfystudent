@@ -9,10 +9,10 @@ Create a tenant-admin-only Utilities area for operational tools that do not belo
 - [x] Add a `Utilities` navigation item.
 - [x] Show `Utilities` only to users with `tenant_admin` or `master_tenant_admin`.
 - [x] Enforce the same access rule in route protection.
-- [ ] Enforce the same access rule in backend endpoints used by utilities.
+- [x] Enforce the same access rule in backend endpoints used by utilities.
 - [x] Hide utilities from counselor, reviewer, processor, and read-only roles.
-- [ ] Add a reusable frontend helper for checking tenant-admin-or-master-admin access.
-- [ ] Add backend tests proving non-admin users cannot access utility import endpoints.
+- [x] Add a reusable frontend helper for checking tenant-admin-or-master-admin access.
+- [x] Add backend tests proving non-admin users cannot access utility import endpoints.
 
 ## Phase 1: Utilities Shell
 
@@ -91,290 +91,290 @@ Goal: Analyze the uploaded file before asking the admin to make decisions.
 
 Goal: Make the admin confirm what the file represents and how it should affect existing records.
 
-- [ ] Show detected import type with confidence.
-- [ ] Allow import type override:
-  - [ ] Let crtfy detect it.
-  - [ ] Students / Prospects.
-  - [ ] Applications.
-  - [ ] Test Scores.
-  - [ ] Coursework / Transcript Lines.
-  - [ ] Events / Visits.
-  - [ ] Communications.
-  - [ ] Custom list.
-- [ ] Default Phase 1 implementation to `Students / Prospects`.
-- [ ] Add import actions:
-  - [ ] Add new students only.
-  - [ ] Update existing students only.
-  - [ ] Add new and update existing.
-  - [ ] Add to existing population or campaign.
-  - [ ] Import as staging list only.
-- [ ] Default action to `Add new and update existing`.
-- [ ] Add matching strategy controls:
-  - [ ] crtfy Student ID.
-  - [ ] External/source ID.
-  - [ ] Email plus date of birth.
-  - [ ] First name plus last name plus date of birth.
-  - [ ] Email only.
-  - [ ] Phone only as weak match.
-- [ ] Clearly label match confidence:
-  - [ ] Strong match.
-  - [ ] Possible match.
-  - [ ] No match.
+- [x] Show detected import type with confidence.
+- [x] Allow import type override:
+  - [x] Let crtfy detect it.
+  - [x] Students / Prospects.
+  - [x] Applications.
+  - [x] Test Scores.
+  - [x] Coursework / Transcript Lines.
+  - [x] Events / Visits.
+  - [x] Communications.
+  - [x] Custom list.
+- [x] Default Phase 1 implementation to `Students / Prospects`.
+- [x] Add import actions:
+  - [x] Add new students only.
+  - [x] Update existing students only.
+  - [x] Add new and update existing.
+  - [x] Add to existing population or campaign.
+  - [x] Import as staging list only.
+- [x] Default action to `Add new and update existing`.
+- [x] Add matching strategy controls:
+  - [x] crtfy Student ID.
+  - [x] External/source ID.
+  - [x] Email plus date of birth.
+  - [x] First name plus last name plus date of birth.
+  - [x] Email only.
+  - [x] Phone only as weak match.
+- [x] Clearly label match confidence:
+  - [x] Strong match.
+  - [x] Possible match.
+  - [x] No match.
 
 ## Phase 5: Smart Column Mapping
 
 Goal: Auto-map common admissions columns while giving admins clear control over uncertain fields.
 
-- [ ] Build three-zone mapping layout:
-  - [ ] Imported columns and sample values.
-  - [ ] crtfy field dropdown mapping.
-  - [ ] Assistant suggestions and warnings.
-- [ ] Auto-map common fields:
-  - [ ] First name.
-  - [ ] Last name.
-  - [ ] Email.
-  - [ ] Mobile phone.
-  - [ ] Intended program.
-  - [ ] Entry term.
-  - [ ] Student type.
-  - [ ] High school name.
-  - [ ] High school CEEB.
-  - [ ] Source.
-  - [ ] Campaign.
-  - [ ] Counselor / recruiter.
-- [ ] Show mapping confidence per column.
-- [ ] Mark columns as:
-  - [ ] Matched.
-  - [ ] Needs review.
-  - [ ] Optional.
-  - [ ] Ignored.
-- [ ] Add `Accept all confident matches`.
-- [ ] Add `Review uncertain matches`.
-- [ ] Add `Save this as a template`.
-- [ ] Let user choose for each source column:
-  - [ ] Map to existing field.
-  - [ ] Do not import.
-  - [ ] Create custom field.
-  - [ ] Transform value.
-  - [ ] Split column.
-  - [ ] Combine columns.
-- [ ] Add common transformations:
-  - [ ] Split full name into first and last.
-  - [ ] Combine address fields.
-  - [ ] Convert Y/N to true/false.
-  - [ ] Normalize terms like `FA26` to `Fall 2026`.
-  - [ ] Normalize student types like `FR` to `First Time Freshman`.
+- [x] Build three-zone mapping layout:
+  - [x] Imported columns and sample values.
+  - [x] crtfy field dropdown mapping.
+  - [x] Assistant suggestions and warnings.
+- [x] Auto-map common fields:
+  - [x] First name.
+  - [x] Last name.
+  - [x] Email.
+  - [x] Mobile phone.
+  - [x] Intended program.
+  - [x] Entry term.
+  - [x] Student type.
+  - [x] High school name.
+  - [x] High school CEEB.
+  - [x] Source.
+  - [x] Campaign.
+  - [x] Counselor / recruiter.
+- [x] Show mapping confidence per column.
+- [x] Mark columns as:
+  - [x] Matched.
+  - [x] Needs review.
+  - [x] Optional.
+  - [x] Ignored.
+- [x] Add `Accept all confident matches`.
+- [x] Add `Review uncertain matches`.
+- [x] Add `Save this as a template`.
+- [x] Let user choose for each source column:
+  - [x] Map to existing field.
+  - [x] Do not import.
+  - [x] Create custom field.
+  - [x] Transform value.
+  - [x] Split column.
+  - [x] Combine columns.
+- [x] Add common transformations:
+  - [x] Split full name into first and last.
+  - [x] Combine address fields.
+  - [x] Convert Y/N to true/false.
+  - [x] Normalize terms like `FA26` to `Fall 2026`.
+  - [x] Normalize student types like `FR` to `First Time Freshman`.
 
 ## Phase 6: Validation And Cleaning
 
 Goal: Let admins fix import problems in the app instead of returning to Excel.
 
-- [ ] Show validation summary:
-  - [ ] Ready to import.
-  - [ ] Will update existing student.
-  - [ ] Needs review.
-  - [ ] Cannot import.
-- [ ] Add row filters:
-  - [ ] Show all rows.
-  - [ ] Show only errors.
-  - [ ] Show possible duplicates.
-  - [ ] Show unmapped required fields.
-  - [ ] Show invalid values.
-  - [ ] Show rows that will update existing students.
-- [ ] Validate required fields for new prospect:
-  - [ ] First name.
-  - [ ] Last name.
-  - [ ] At least one contact or identifying field.
-- [ ] Validate email.
-- [ ] Validate phone.
-- [ ] Validate active program match.
-- [ ] Validate entry term.
-- [ ] Validate duplicate candidates.
-- [ ] Provide row-level resolutions:
-  - [ ] Map another column.
-  - [ ] Import as incomplete prospect.
-  - [ ] Skip row.
-  - [ ] Download errors.
-  - [ ] Update existing student.
-  - [ ] Create new student.
-  - [ ] Review manually.
-  - [ ] Map invalid program to active program.
-  - [ ] Create program alias for future imports.
-  - [ ] Accept safe transformation.
-  - [ ] Apply fix to all similar values.
-- [ ] Add inline row editing for common fields.
-- [ ] Track all validation warnings and errors in import row records.
+- [x] Show validation summary:
+  - [x] Ready to import.
+  - [x] Will update existing student.
+  - [x] Needs review.
+  - [x] Cannot import.
+- [x] Add row filters:
+  - [x] Show all rows.
+  - [x] Show only errors.
+  - [x] Show possible duplicates.
+  - [x] Show unmapped required fields.
+  - [x] Show invalid values.
+  - [x] Show rows that will update existing students.
+- [x] Validate required fields for new prospect:
+  - [x] First name.
+  - [x] Last name.
+  - [x] At least one contact or identifying field.
+- [x] Validate email.
+- [x] Validate phone.
+- [x] Validate active program match.
+- [x] Validate entry term.
+- [x] Validate duplicate candidates.
+- [x] Provide row-level resolutions:
+  - [x] Map another column.
+  - [x] Import as incomplete prospect.
+  - [x] Skip row.
+  - [x] Download errors.
+  - [x] Update existing student.
+  - [x] Create new student.
+  - [x] Review manually.
+  - [x] Map invalid program to active program.
+  - [x] Create program alias for future imports.
+  - [x] Accept safe transformation.
+  - [x] Apply fix to all similar values.
+- [x] Add inline row editing for common fields.
+- [x] Track all validation warnings and errors in import row records.
 
 ## Phase 7: Final Review And Import
 
 Goal: Make consequences clear before the admin commits.
 
-- [ ] Show final summary:
-  - [ ] New students to create.
-  - [ ] Existing students to update.
-  - [ ] Rows skipped for review.
-  - [ ] Rows blocked.
-  - [ ] Mapped fields.
-  - [ ] Ignored columns.
-  - [ ] Template name.
-- [ ] Show consequences:
-  - [ ] Create new student prospect records.
-  - [ ] Add imported students to population.
-  - [ ] Assign counselors using territory rules.
-  - [ ] Apply source.
-  - [ ] Preserve existing values unless import behavior allows update.
-  - [ ] Create import audit record.
-- [ ] Add buttons:
-  - [ ] Import now.
-  - [ ] Save as draft.
-  - [ ] Download validation report.
-  - [ ] Back to mapping.
-- [ ] After import, show completion summary:
-  - [ ] Created.
-  - [ ] Updated.
-  - [ ] Skipped.
-  - [ ] Failed.
-- [ ] Add post-import links:
-  - [ ] View imported students.
-  - [ ] View skipped rows.
-  - [ ] Download import report.
-  - [ ] Undo import.
-  - [ ] Save mapping as template.
+- [x] Show final summary:
+  - [x] New students to create.
+  - [x] Existing students to update.
+  - [x] Rows skipped for review.
+  - [x] Rows blocked.
+  - [x] Mapped fields.
+  - [x] Ignored columns.
+  - [x] Template name.
+- [x] Show consequences:
+  - [x] Create new student prospect records.
+  - [x] Add imported students to population.
+  - [x] Assign counselors using territory rules.
+  - [x] Apply source.
+  - [x] Preserve existing values unless import behavior allows update.
+  - [x] Create import audit record.
+- [x] Add buttons:
+  - [x] Import now.
+  - [x] Save as draft.
+  - [x] Download validation report.
+  - [x] Back to mapping.
+- [x] After import, show completion summary:
+  - [x] Created.
+  - [x] Updated.
+  - [x] Skipped.
+  - [x] Failed.
+- [x] Add post-import links:
+  - [x] View imported students.
+  - [x] View skipped rows.
+  - [x] Download import report.
+  - [x] Undo import.
+  - [x] Save mapping as template.
 
 ## Phase 8: Import Job History And Audit
 
 Goal: Make every import traceable and reversible where safe.
 
-- [ ] Create import job record.
-- [ ] Store uploaded file metadata.
-- [ ] Store user who approved import.
-- [ ] Store tenant.
-- [ ] Store detected delimiter and header row.
-- [ ] Store import type.
-- [ ] Store action mode.
-- [ ] Store created count.
-- [ ] Store updated count.
-- [ ] Store failed count.
-- [ ] Store skipped count.
-- [ ] Store started and completed timestamps.
-- [ ] Store row-level raw data.
-- [ ] Store row-level normalized data.
-- [ ] Store row-level status.
-- [ ] Store matched student ID.
-- [ ] Store field mappings and confidence.
-- [ ] Store before/after values for updates.
-- [ ] Add import report download.
-- [ ] Add error report download.
-- [ ] Add safe undo for records created by import.
+- [x] Create import job record.
+- [x] Store uploaded file metadata.
+- [x] Store user who approved import.
+- [x] Store tenant.
+- [x] Store detected delimiter and header row.
+- [x] Store import type.
+- [x] Store action mode.
+- [x] Store created count.
+- [x] Store updated count.
+- [x] Store failed count.
+- [x] Store skipped count.
+- [x] Store started and completed timestamps.
+- [x] Store row-level raw data.
+- [x] Store row-level normalized data.
+- [x] Store row-level status.
+- [x] Store matched student ID.
+- [x] Store field mappings and confidence.
+- [x] Store before/after values for updates.
+- [x] Add import report download.
+- [x] Add error report download.
+- [x] Add safe undo for records created by import.
 
 ## Phase 9: Templates And Remembered Mappings
 
 Goal: Make repeat vendor imports fast.
 
-- [ ] Save import template by tenant.
-- [ ] Store source/vendor.
-- [ ] Store import type.
-- [ ] Store column mappings.
-- [ ] Store transform rules.
-- [ ] Store validation rules.
-- [ ] Store matching strategy.
-- [ ] Store update behavior.
-- [ ] Suggest matching template on upload.
-- [ ] Add template examples:
-  - [ ] College Board Search Import.
-  - [ ] ACT Score Import.
-  - [ ] Common App Export.
-  - [ ] Slate Export.
-  - [ ] Element451 Export.
-  - [ ] Manual Inquiry Upload.
-  - [ ] High School Visit Sheet.
-  - [ ] Transfer Course Upload.
-- [ ] Let admin apply suggested template.
-- [ ] Let admin change suggested template.
-- [ ] Let admin update an existing template after a successful import.
+- [x] Save import template by tenant.
+- [x] Store source/vendor.
+- [x] Store import type.
+- [x] Store column mappings.
+- [x] Store transform rules.
+- [x] Store validation rules.
+- [x] Store matching strategy.
+- [x] Store update behavior.
+- [x] Suggest matching template on upload.
+- [x] Add template examples:
+  - [x] College Board Search Import.
+  - [x] ACT Score Import.
+  - [x] Common App Export.
+  - [x] Slate Export.
+  - [x] Element451 Export.
+  - [x] Manual Inquiry Upload.
+  - [x] High School Visit Sheet.
+  - [x] Transfer Course Upload.
+- [x] Let admin apply suggested template.
+- [x] Let admin change suggested template.
+- [x] Let admin update an existing template after a successful import.
 
 ## Phase 10: Admissions Normalization
 
 Goal: Normalize common admissions values before import.
 
-- [ ] Normalize terms:
-  - [ ] `FA26` to `Fall 2026`.
-  - [ ] `Fall 26` to `Fall 2026`.
-  - [ ] `2026FA` to `Fall 2026`.
-- [ ] Normalize student types:
-  - [ ] `FR` to `First Time Freshman`.
-  - [ ] `TR` to `Transfer`.
-  - [ ] `GR` to `Graduate`.
-  - [ ] `Intl` to `International`.
-- [ ] Normalize programs:
-  - [ ] `BSN` to `Bachelor of Science in Nursing`.
-  - [ ] `MBA` to `Master of Business Administration`.
-- [ ] Normalize sources:
-  - [ ] `CB` to `College Board`.
-  - [ ] `HS Visit` to `High School Visit`.
-  - [ ] `Fair` to `College Fair`.
-- [ ] Preserve raw imported values.
-- [ ] Store normalized values.
-- [ ] Store transform confidence.
-- [ ] Allow admin to approve transformations.
+- [x] Normalize terms:
+  - [x] `FA26` to `Fall 2026`.
+  - [x] `Fall 26` to `Fall 2026`.
+  - [x] `2026FA` to `Fall 2026`.
+- [x] Normalize student types:
+  - [x] `FR` to `First Time Freshman`.
+  - [x] `TR` to `Transfer`.
+  - [x] `GR` to `Graduate`.
+  - [x] `Intl` to `International`.
+- [x] Normalize programs:
+  - [x] `BSN` to `Bachelor of Science in Nursing`.
+  - [x] `MBA` to `Master of Business Administration`.
+- [x] Normalize sources:
+  - [x] `CB` to `College Board`.
+  - [x] `HS Visit` to `High School Visit`.
+  - [x] `Fair` to `College Fair`.
+- [x] Preserve raw imported values.
+- [x] Store normalized values.
+- [x] Store transform confidence.
+- [x] Allow admin to approve transformations.
 
 ## Phase 11: Duplicate Matching
 
 Goal: Avoid duplicate student records without overclaiming uncertain matches.
 
-- [ ] Score duplicate candidates using:
-  - [ ] crtfy student ID exact match.
-  - [ ] External source ID exact match.
-  - [ ] Email plus DOB.
-  - [ ] Name plus DOB plus phone.
-  - [ ] Name plus high school plus grad year.
-  - [ ] Email only.
-  - [ ] Phone only.
-- [ ] Use labels:
-  - [ ] Existing student found.
-  - [ ] Possible match.
-  - [ ] Needs review.
-- [ ] Avoid using the word duplicate unless confidence is high.
-- [ ] Add duplicate review actions:
-  - [ ] Update existing.
-  - [ ] Create new.
-  - [ ] Skip.
-  - [ ] Review manually.
-- [ ] Store match confidence and reasons.
+- [x] Score duplicate candidates using:
+  - [x] crtfy student ID exact match.
+  - [x] External source ID exact match.
+  - [x] Email plus DOB.
+  - [x] Name plus DOB plus phone.
+  - [x] Name plus high school plus grad year.
+  - [x] Email only.
+  - [x] Phone only.
+- [x] Use labels:
+  - [x] Existing student found.
+  - [x] Possible match.
+  - [x] Needs review.
+- [x] Avoid using the word duplicate unless confidence is high.
+- [x] Add duplicate review actions:
+  - [x] Update existing.
+  - [x] Create new.
+  - [x] Skip.
+  - [x] Review manually.
+- [x] Store match confidence and reasons.
 
 ## Phase 12: Update Behavior Controls
 
 Goal: Give admins control over how imports affect existing records.
 
-- [ ] Add whole-import update behavior:
-  - [ ] Do not overwrite existing values.
-  - [ ] Overwrite only blank values.
-  - [ ] Always overwrite.
-  - [ ] Append to existing values.
-  - [ ] Add as historical/source value.
-- [ ] Add per-field update behavior.
-- [ ] Default phone to keep existing unless blank.
-- [ ] Default source to append, not overwrite.
-- [ ] Default program to update only when current value is blank.
-- [ ] Default application status to never overwrite unless explicitly enabled.
-- [ ] Show overwrite consequences in final review.
+- [x] Add whole-import update behavior:
+  - [x] Do not overwrite existing values.
+  - [x] Overwrite only blank values.
+  - [x] Always overwrite.
+  - [x] Append to existing values.
+  - [x] Add as historical/source value.
+- [x] Add per-field update behavior.
+- [x] Default phone to keep existing unless blank.
+- [x] Default source to append, not overwrite.
+- [x] Default program to update only when current value is blank.
+- [x] Default application status to never overwrite unless explicitly enabled.
+- [x] Show overwrite consequences in final review.
 
 ## Phase 13: Import Assistant
 
 Goal: Add practical assistant support without making the wizard feel magical or opaque.
 
-- [ ] Add assistant panel to mapping and validation steps.
-- [ ] Show top issues to review.
-- [ ] Add `Fix all safe issues`.
-- [ ] Add `Review one by one`.
-- [ ] Add `Explain this import`.
-- [ ] Add `Create reusable template`.
-- [ ] Support questions:
-  - [ ] Why is this row blocked?
-  - [ ] What will happen if I import this?
-  - [ ] Which fields will overwrite existing student data?
-  - [ ] Can you map program names to closest active programs?
-  - [ ] Show only students that might already exist.
+- [x] Add assistant panel to mapping and validation steps.
+- [x] Show top issues to review.
+- [x] Add `Fix all safe issues`.
+- [x] Add `Review one by one`.
+- [x] Add `Explain this import`.
+- [x] Add `Create reusable template`.
+- [x] Support questions:
+  - [x] Why is this row blocked?
+  - [x] What will happen if I import this?
+  - [x] Which fields will overwrite existing student data?
+  - [x] Can you map program names to closest active programs?
+  - [x] Show only students that might already exist.
 
 ## Phase 14: Later Import Types
 
@@ -400,15 +400,15 @@ Goal: Expand beyond Student Prospects after the first wizard is stable.
 
 ## MVP Cut
 
-- [ ] Utilities tab visible only to tenant admin and master tenant admin.
-- [ ] CSV upload.
-- [ ] Auto-detect delimiter and header.
-- [ ] Confirm import type as Students / Prospects only.
-- [ ] Auto-map common student fields.
-- [ ] Manual column mapping.
-- [ ] Required field validation.
-- [ ] Duplicate detection by email and external ID.
-- [ ] Preview create/update/skip counts.
-- [ ] Import job history.
-- [ ] Download error report.
-- [ ] Save mapping template.
+- [x] Utilities tab visible only to tenant admin and master tenant admin.
+- [x] CSV upload.
+- [x] Auto-detect delimiter and header.
+- [x] Confirm import type as Students / Prospects only.
+- [x] Auto-map common student fields.
+- [x] Manual column mapping.
+- [x] Required field validation.
+- [x] Duplicate detection by email and external ID.
+- [x] Preview create/update/skip counts.
+- [x] Import job history.
+- [x] Download error report.
+- [x] Save mapping template.
