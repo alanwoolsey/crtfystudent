@@ -1807,6 +1807,7 @@ export default function StudentProfilePage() {
         if (crtfyDocumentsContentUrl) {
           response = await fetchStoredDocumentContentUrl(crtfyDocumentsContentUrl, {
             tenantId: session.tenant_id,
+            accessToken: session.access_token,
             userEmail: session.email || session.username,
             actor: session.username || session.email || 'crtfy-student',
             department: getTranscriptDocumentStorageDepartment(selectedTranscript),
@@ -1814,6 +1815,7 @@ export default function StudentProfilePage() {
         } else if (crtfyDocumentsId) {
           response = await fetchStoredDocumentContent(crtfyDocumentsId, {
             tenantId: session.tenant_id,
+            accessToken: session.access_token,
             userEmail: session.email || session.username,
             actor: session.username || session.email || 'crtfy-student',
             department: getTranscriptDocumentStorageDepartment(selectedTranscript),

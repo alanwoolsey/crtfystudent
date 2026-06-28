@@ -17,6 +17,7 @@ export const activeDocumentStorageProvider = {
 export function buildDocumentStorageHeaders(overrides = {}) {
   const tenantId = overrides.tenantId || documentStorageTenantId
   return {
+    ...(overrides.accessToken ? { Authorization: `Bearer ${overrides.accessToken}` } : {}),
     ...(tenantId ? { 'X-Tenant-Id': tenantId } : {}),
     'X-Actor': overrides.actor || documentStorageActor,
     'X-User-Email': overrides.userEmail || documentStorageUserEmail,
@@ -94,6 +95,7 @@ export async function uploadStoredDocument(file, options = {}) {
     method: 'POST',
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
+      accessToken: options.accessToken,
       actor: options.actor,
       userEmail: options.userEmail,
       role: options.role,
@@ -138,6 +140,7 @@ export async function fetchStoredDocumentContent(documentId, options = {}) {
   return fetch(getStoredDocumentContentUrl(documentId), {
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
+      accessToken: options.accessToken,
       actor: options.actor,
       userEmail: options.userEmail,
       role: options.role,
@@ -151,6 +154,7 @@ export async function fetchStoredDocumentContentUrl(contentUrl, options = {}) {
   return fetch(normalizeDocumentStorageUrl(contentUrl), {
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
+      accessToken: options.accessToken,
       actor: options.actor,
       userEmail: options.userEmail,
       role: options.role,
@@ -164,6 +168,7 @@ export async function fetchStoredDocumentMetadata(documentId, options = {}) {
   return fetch(getStoredDocumentMetadataUrl(documentId), {
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
+      accessToken: options.accessToken,
       actor: options.actor,
       userEmail: options.userEmail,
       role: options.role,
@@ -177,6 +182,7 @@ export async function fetchStoredDocumentDownload(documentId, options = {}) {
   return fetch(getStoredDocumentDownloadUrl(documentId), {
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
+      accessToken: options.accessToken,
       actor: options.actor,
       userEmail: options.userEmail,
       role: options.role,

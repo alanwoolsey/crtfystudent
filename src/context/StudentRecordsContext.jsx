@@ -594,6 +594,7 @@ export function StudentRecordsProvider({ children }) {
       tags: options.tags,
       notes: options.notes,
       tenantId: documentStorageTenantId,
+      accessToken: session.access_token,
       userEmail: session.email || session.username,
       actor: session.username || session.email || 'crtfy-student',
     })

@@ -500,6 +500,7 @@ export default function DocumentsQueuePage() {
         notes: `Replacement upload for document ${documentId}`,
         tags: ['reprocess', documentId],
         tenantId: session.tenant_id,
+        accessToken: session.access_token,
         userEmail: session.email || session.username,
         actor: session.username || session.email || 'crtfy-student',
       })
