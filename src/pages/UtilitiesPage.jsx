@@ -956,8 +956,8 @@ export default function UtilitiesPage() {
               <button type="button" className="primary-button" onClick={() => setStep((current) => Math.min(5, current + 1))} disabled={step >= 5}>Next</button>
             </div>
 
-            <section className="dashboard-grid two-up">
-              <article className="panel inner-panel">
+            <section className="dashboard-grid two-up utility-preview-layout">
+              <article className="panel inner-panel utility-preview-panel">
                 <div className="panel-header">
                   <div><h3>File detection and preview</h3><p>Detected {analysis.delimiter.label}, row {analysis.headerRow} header, {analysis.rowCount} rows, {analysis.columnCount} columns.</p></div>
                   <button type="button" className="secondary-button" onClick={() => setIsAdvancedOpen((current) => !current)}>Advanced file settings</button>
