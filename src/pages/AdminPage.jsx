@@ -248,6 +248,10 @@ export default function AdminPage() {
   const canUpdateUsers = hasAnyPermission(['admin_users_update', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_update', 'platform_users_manage'])
   const canDeactivateUsers = hasAnyPermission(['admin_users_deactivate', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_deactivate', 'platform_users_manage'])
   const canDeleteUsers = hasAnyPermission(['admin_users_delete', 'manage_integrations', 'release_decision', 'platform_tenants_manage', 'platform_users_delete', 'platform_users_manage'])
+  const currentRoles = Array.isArray(currentUser?.roles) ? currentUser.roles : []
+  const isMasterTenantAdmin = currentUser?.baseRole === 'master_tenant_admin' || currentRoles.includes('master_tenant_admin')
+  const canChangeUserRights = isMasterTenantAdmin || currentUser?.baseRole === 'tenant_admin' || currentRoles.includes('tenant_admin')
+  const assignableRoleOptions = roleOptions.filter((role) => isMasterTenantAdmin || role.key !== 'master_tenant_admin')
   const effectiveTenantId = canSelectTenant ? selectedTenantId : session?.tenant_id
   const selectedTenant = platformTenants.find((tenant) => tenant.tenantId === effectiveTenantId)
 
@@ -1157,9 +1161,9 @@ export default function AdminPage() {
               <div className="admin-form-grid">
                 <label className="auth-field">
                   <span>Base role</span>
-                  <select name="baseRole" value={form.baseRole} onChange={handleFieldChange}>
+                  <select name="baseRole" value={form.baseRole} onChange={handleFieldChange} disabled={!canChangeUserRights}>
                     <option value="">None</option>
-                    {roleOptions.map((role) => (
+                    {assignableRoleOptions.map((role) => (
                       <option key={role.key} value={role.key}>{role.label}</option>
                     ))}
                   </select>
@@ -1182,11 +1186,12 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="admin-check-grid">
-                  {roleOptions.map((role) => (
+                  {assignableRoleOptions.map((role) => (
                     <label key={role.key} className="admin-check-card">
                       <input
                         type="checkbox"
                         checked={form.roles.includes(role.key)}
+                        disabled={!canChangeUserRights}
                         onChange={() => toggleArrayValue('roles', role.key)}
                       />
                       <div>
@@ -1196,6 +1201,7 @@ export default function AdminPage() {
                     </label>
                   ))}
                 </div>
+                {!canChangeUserRights ? <p className="muted-copy">Only tenant admins and master tenant admins can change user rights.</p> : null}
               </div>
 
               <div className="panel admin-form-panel">

@@ -86,7 +86,7 @@ function createAdminForm() {
 }
 
 export default function PlatformTenantsPage() {
-  const { session, fetchWithTenantAuth, hasAnyPermission } = useAuth()
+  const { currentUser, session, fetchWithTenantAuth, hasAnyPermission } = useAuth()
   const [tenants, setTenants] = useState([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -110,6 +110,8 @@ export default function PlatformTenantsPage() {
   const canCreateTenants = hasAnyPermission(['platform_tenants_create', 'platform_tenants_manage'])
   const canUpdateTenants = hasAnyPermission(['platform_tenants_update', 'platform_tenants_manage'])
   const canProvisionAdmins = hasAnyPermission(['platform_tenants_admins_create', 'platform_tenants_manage'])
+  const currentRoles = Array.isArray(currentUser?.roles) ? currentUser.roles : []
+  const isMasterTenantAdmin = currentUser?.baseRole === 'master_tenant_admin' || currentRoles.includes('master_tenant_admin')
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
@@ -300,6 +302,11 @@ export default function PlatformTenantsPage() {
     }
     if (!adminForm.email.trim() || !adminForm.displayName.trim()) {
       setAdminFormError('Admin email and display name are required.')
+      return
+    }
+    const requestedRoles = new Set([adminForm.baseRole.trim(), ...adminForm.roles].filter(Boolean))
+    if (requestedRoles.has('master_tenant_admin') && !isMasterTenantAdmin) {
+      setAdminFormError('Only a master tenant admin can assign the master tenant admin role.')
       return
     }
 

@@ -22,6 +22,7 @@ import {
   TrendingUp,
   Upload,
   UserCircle2,
+  Wrench,
   X,
 } from 'lucide-react'
 import AuthScreen from './components/AuthScreen'
@@ -46,6 +47,7 @@ import DepositMeltPage from './pages/DepositMeltPage'
 import ReportingPage from './pages/ReportingPage'
 import AdminPage from './pages/AdminPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
+import UtilitiesPage from './pages/UtilitiesPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
 
 const idleUploadState = {
@@ -132,6 +134,12 @@ const navItems = [
     label: 'Reporting',
     icon: BarChart3,
     access: { permissions: ['view_dashboards'] },
+  },
+  {
+    to: '/utilities',
+    label: 'Utilities',
+    icon: Wrench,
+    anyAccess: [{ roles: ['tenant_admin'] }, { roles: ['master_tenant_admin'] }],
   },
   {
     to: '/admin',
@@ -524,6 +532,7 @@ export default function App() {
           <Route path="/melt" element={<ProtectedRoute anyAccess={[{ permissions: ['view_student_360'] }, { permissions: ['view_dashboards'] }]}><DepositMeltPage /></ProtectedRoute>} />
           <Route path="/connectors" element={<ProtectedRoute access={{ permissions: ['manage_integrations'] }}><ConnectorsPage /></ProtectedRoute>} />
           <Route path="/reporting" element={<ProtectedRoute access={{ permissions: ['view_dashboards'] }}><ReportingPage /></ProtectedRoute>} />
+          <Route path="/utilities" element={<ProtectedRoute anyAccess={[{ roles: ['tenant_admin'] }, { roles: ['master_tenant_admin'] }]}><UtilitiesPage /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute anyAccess={[{ permissions: ['admin_users_view'] }, { permissions: ['manage_integrations'] }, { permissions: ['release_decision'] }, { permissions: ['platform_tenants_view'] }, { permissions: ['platform_users_view'] }, { permissions: ['platform_users_manage'] }]}><AdminPage /></ProtectedRoute>} />
           <Route path="/platform/tenants" element={<ProtectedRoute access={{ permissions: ['platform_tenants_view'] }}><PlatformTenantsPage /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><UserProfilePage /></ProtectedRoute>} />
