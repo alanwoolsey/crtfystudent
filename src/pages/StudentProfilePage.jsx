@@ -1806,10 +1806,16 @@ export default function StudentProfilePage() {
 
         if (crtfyDocumentsContentUrl) {
           response = await fetchStoredDocumentContentUrl(crtfyDocumentsContentUrl, {
+            tenantId: session.tenant_id,
+            userEmail: session.email || session.username,
+            actor: session.username || session.email || 'crtfy-student',
             department: getTranscriptDocumentStorageDepartment(selectedTranscript),
           })
         } else if (crtfyDocumentsId) {
           response = await fetchStoredDocumentContent(crtfyDocumentsId, {
+            tenantId: session.tenant_id,
+            userEmail: session.email || session.username,
+            actor: session.username || session.email || 'crtfy-student',
             department: getTranscriptDocumentStorageDepartment(selectedTranscript),
           })
         } else if (storageProvider === activeDocumentStorageProvider.id) {

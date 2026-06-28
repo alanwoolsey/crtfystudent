@@ -499,6 +499,9 @@ export default function DocumentsQueuePage() {
         documentType: 'Transcript',
         notes: `Replacement upload for document ${documentId}`,
         tags: ['reprocess', documentId],
+        tenantId: session.tenant_id,
+        userEmail: session.email || session.username,
+        actor: session.username || session.email || 'crtfy-student',
       })
       const formData = new FormData()
       formData.append('file', file, file.name)
@@ -507,7 +510,7 @@ export default function DocumentsQueuePage() {
       formData.append('storage_provider', storedDocument.provider)
       formData.append('document_id', storedDocument.documentId)
       formData.append('crtfy_documents_document_id', storedDocument.documentId)
-      formData.append('crtfy_documents_tenant_id', storedDocument.tenantId || 'demo')
+      formData.append('crtfy_documents_tenant_id', storedDocument.tenantId || session.tenant_id)
       if (storedDocument.contentUrl) formData.append('content_url', storedDocument.contentUrl)
       formData.append('skip_storage', 'true')
       formData.append('source', 'crtfy_student')

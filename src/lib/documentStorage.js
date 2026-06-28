@@ -1,5 +1,5 @@
 const crtfyDocumentsBaseUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_URL || 'https://api.crtfydocuments.com').replace(/\/+$/, '')
-const documentStorageTenantId = import.meta.env.VITE_DOCUMENT_STORAGE_TENANT_ID || 'demo'
+const documentStorageTenantId = import.meta.env.VITE_DOCUMENT_STORAGE_TENANT_ID || ''
 const documentStorageActor = import.meta.env.VITE_DOCUMENT_STORAGE_ACTOR || 'crtfy-student'
 const documentStorageUserEmail = import.meta.env.VITE_DOCUMENT_STORAGE_USER_EMAIL || 'system@crtfystudent.com'
 const documentStorageRole = import.meta.env.VITE_DOCUMENT_STORAGE_ROLE || 'admin'
@@ -14,8 +14,9 @@ export const activeDocumentStorageProvider = {
 }
 
 export function buildDocumentStorageHeaders(overrides = {}) {
+  const tenantId = overrides.tenantId || documentStorageTenantId
   return {
-    'X-Tenant-Id': overrides.tenantId || documentStorageTenantId,
+    ...(tenantId ? { 'X-Tenant-Id': tenantId } : {}),
     'X-Actor': overrides.actor || documentStorageActor,
     'X-User-Email': overrides.userEmail || documentStorageUserEmail,
     'X-Role': overrides.role || documentStorageRole,
@@ -72,7 +73,13 @@ export async function uploadStoredDocument(file, options = {}) {
 
   const response = await fetch(`${crtfyDocumentsBaseUrl}/api/intake/files`, {
     method: 'POST',
-    headers: buildDocumentStorageHeaders({ tenantId: options.tenantId, department }),
+    headers: buildDocumentStorageHeaders({
+      tenantId: options.tenantId,
+      actor: options.actor,
+      userEmail: options.userEmail,
+      role: options.role,
+      department,
+    }),
     body: formData,
   })
   const payload = await parseDocumentStorageResponse(response)
@@ -110,27 +117,51 @@ export function getStoredDocumentDownloadUrl(documentId) {
 export async function fetchStoredDocumentContent(documentId, options = {}) {
   const department = options.department || 'General'
   return fetch(getStoredDocumentContentUrl(documentId), {
-    headers: buildDocumentStorageHeaders({ department }),
+    headers: buildDocumentStorageHeaders({
+      tenantId: options.tenantId,
+      actor: options.actor,
+      userEmail: options.userEmail,
+      role: options.role,
+      department,
+    }),
   })
 }
 
 export async function fetchStoredDocumentContentUrl(contentUrl, options = {}) {
   const department = options.department || 'General'
   return fetch(contentUrl, {
-    headers: buildDocumentStorageHeaders({ department }),
+    headers: buildDocumentStorageHeaders({
+      tenantId: options.tenantId,
+      actor: options.actor,
+      userEmail: options.userEmail,
+      role: options.role,
+      department,
+    }),
   })
 }
 
 export async function fetchStoredDocumentMetadata(documentId, options = {}) {
   const department = options.department || 'General'
   return fetch(getStoredDocumentMetadataUrl(documentId), {
-    headers: buildDocumentStorageHeaders({ department }),
+    headers: buildDocumentStorageHeaders({
+      tenantId: options.tenantId,
+      actor: options.actor,
+      userEmail: options.userEmail,
+      role: options.role,
+      department,
+    }),
   })
 }
 
 export async function fetchStoredDocumentDownload(documentId, options = {}) {
   const department = options.department || 'General'
   return fetch(getStoredDocumentDownloadUrl(documentId), {
-    headers: buildDocumentStorageHeaders({ department }),
+    headers: buildDocumentStorageHeaders({
+      tenantId: options.tenantId,
+      actor: options.actor,
+      userEmail: options.userEmail,
+      role: options.role,
+      department,
+    }),
   })
 }
