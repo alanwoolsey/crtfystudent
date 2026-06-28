@@ -1630,7 +1630,7 @@ export default function StudentProfilePage() {
     const scopedPrograms = Array.isArray(currentUser?.scopes?.programs)
       ? currentUser.scopes.programs.filter((program) => program && program !== '*')
       : []
-    const recordPrograms = displayStudents
+    const recordPrograms = students
       .map((item) => getProgramDisplay(item))
       .filter((program) => program && program !== 'Program pending')
     const currentProgram = getProgramDisplay(student)
@@ -1641,7 +1641,7 @@ export default function StudentProfilePage() {
       ...recordPrograms,
       ...defaultProgramOptions,
     ].filter(Boolean)))
-  }, [currentUser, displayStudents, student])
+  }, [currentUser, student, students])
 
   useEffect(() => {
     if (!student || !selectedCommunicationTemplate) return
