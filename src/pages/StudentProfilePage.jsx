@@ -12,7 +12,7 @@ import ChecklistProgress from '../components/ChecklistProgress'
 import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
-import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl } from '../lib/documentStorage'
+import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl, normalizeDocumentStorageUrl } from '../lib/documentStorage'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
@@ -559,7 +559,7 @@ function isNumericDocumentId(value) {
 }
 
 function getTranscriptDocumentContentUrl(transcript) {
-  return getFirstValue(
+  return normalizeDocumentStorageUrl(getFirstValue(
     transcript?.documentContentUrl,
     transcript?.document_content_url,
     transcript?.contentUrl,
@@ -576,7 +576,7 @@ function getTranscriptDocumentContentUrl(transcript) {
     transcript?.rawDocument?.metadata?.document_content_url,
     transcript?.rawDocument?.metadata?.contentUrl,
     transcript?.rawDocument?.metadata?.content_url,
-  )
+  ))
 }
 
 function getTranscriptCrtfyDocumentsId(transcript) {

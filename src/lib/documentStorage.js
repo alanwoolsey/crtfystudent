@@ -1,4 +1,5 @@
 const crtfyDocumentsBaseUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_URL || 'https://api.crtfydocuments.com').replace(/\/+$/, '')
+const crtfyDocumentsPublicUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_PUBLIC_URL || crtfyDocumentsBaseUrl).replace(/\/+$/, '')
 const documentStorageTenantId = import.meta.env.VITE_DOCUMENT_STORAGE_TENANT_ID || ''
 const documentStorageActor = import.meta.env.VITE_DOCUMENT_STORAGE_ACTOR || 'crtfy-student'
 const documentStorageUserEmail = import.meta.env.VITE_DOCUMENT_STORAGE_USER_EMAIL || 'system@crtfystudent.com'
@@ -40,7 +41,25 @@ export function getStoredDocumentId(payload) {
 }
 
 export function getStoredDocumentContentLocation(payload) {
-  return payload?.content_url || payload?.contentUrl || payload?.content?.url || ''
+  return normalizeDocumentStorageUrl(payload?.content_url || payload?.contentUrl || payload?.content?.url || '')
+}
+
+export function normalizeDocumentStorageUrl(value) {
+  const url = String(value || '').trim()
+  if (!url) return ''
+  try {
+    const parsedUrl = new URL(url)
+    const publicUrl = new URL(crtfyDocumentsPublicUrl)
+    const storageUrl = new URL(crtfyDocumentsBaseUrl)
+    if (parsedUrl.hostname.toLowerCase() === storageUrl.hostname.toLowerCase()) {
+      parsedUrl.protocol = publicUrl.protocol
+      parsedUrl.host = publicUrl.host
+      return parsedUrl.toString()
+    }
+  } catch {
+    return url
+  }
+  return url
 }
 
 export async function parseDocumentStorageResponse(response) {
@@ -129,7 +148,7 @@ export async function fetchStoredDocumentContent(documentId, options = {}) {
 
 export async function fetchStoredDocumentContentUrl(contentUrl, options = {}) {
   const department = options.department || 'General'
-  return fetch(contentUrl, {
+  return fetch(normalizeDocumentStorageUrl(contentUrl), {
     headers: buildDocumentStorageHeaders({
       tenantId: options.tenantId,
       actor: options.actor,
