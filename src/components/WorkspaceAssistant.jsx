@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Bot, CheckCircle2, Maximize2, MessageCircle, Minimize2, Paperclip, Send, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAuth } from '../context/AuthContext'
 
-const chatApiBaseUrl = (import.meta.env.VITE_CHAT_URL || '').replace(/\/+$/, '')
+const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '')
 
 const quickPrompts = [
   'What needs attention today?',
@@ -56,6 +57,7 @@ function MarkdownMessage({ content }) {
 
 export default function WorkspaceAssistant({ currentUser }) {
   const { session } = useAuth()
+  const location = useLocation()
   const inputRef = useRef(null)
   const assistantRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -104,12 +106,12 @@ export default function WorkspaceAssistant({ currentUser }) {
     const content = messageText.trim()
     if (!content || isSending) return
 
-    if (!chatApiBaseUrl) {
-      setError('VITE_CHAT_URL is not configured for the governed assistant.')
+    if (!apiBaseUrl) {
+      setError('VITE_API_URL is not configured for the workspace assistant.')
       return
     }
 
-    if (!session?.access_token) {
+    if (!session?.access_token || !session?.tenant_id) {
       setError('Sign in is required before using the governed assistant.')
       return
     }
@@ -139,16 +141,23 @@ export default function WorkspaceAssistant({ currentUser }) {
         dataBase64: await readFileAsBase64(attachment),
       }] : undefined
 
-      const response = await fetch(`${chatApiBaseUrl}/api/agent/run`, {
+      const activeEntity = getActiveEntity(location.pathname)
+      const response = await fetch(`${apiBaseUrl}/api/v1/assistant/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
+          'X-Tenant-Id': session.tenant_id,
         },
         body: JSON.stringify({
           message: content,
-          dataClassification: 'internal',
-          workspaceId: 'general',
+          route: `${location.pathname}${location.search || ''}`,
+          activeEntity,
+          uiState: {
+            pathname: location.pathname,
+            search: location.search || '',
+          },
+          conversationSummary: summarizeConversation(messages),
           ...(attachments ? { attachments } : {}),
         }),
       })
@@ -301,4 +310,18 @@ export default function WorkspaceAssistant({ currentUser }) {
       </button>
     </div>
   )
+}
+
+function getActiveEntity(pathname) {
+  const parts = String(pathname || '').split('/').filter(Boolean)
+  if (parts[0] === 'students' && parts[1]) return { type: 'student', id: parts[1] }
+  return null
+}
+
+function summarizeConversation(messages) {
+  const recent = messages
+    .filter((message) => message.id !== 'welcome')
+    .slice(-4)
+    .map((message) => `${message.role}: ${String(message.content || '').slice(0, 180)}`)
+  return recent.join('\n')
 }
