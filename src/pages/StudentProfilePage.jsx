@@ -124,6 +124,7 @@ const postAdmitMilestones = [
 const milestoneStatuses = ['Not started', 'In progress', 'Blocked', 'Complete', 'Waived']
 const territoryOptions = ['North', 'South', 'East', 'West', 'Transfer Partners', 'Online', 'International']
 const recruitmentEventTypes = ['College fair', 'High school visit', 'Transfer partner visit', 'Open house', 'Webinar', 'Campus visit', 'Counselor travel']
+const strongGovernmentIdFilePattern = /(^|[^a-z])dl([^a-z]|$)|driver|drivers|driver.s|license|licence|\bcdl\b|commercial.driver|state.id|photo.id|passport|government.id|residency|resident|id.card/i
 const scholarshipCatalog = [
   {
     id: 'transfer-achievement',
@@ -1476,6 +1477,7 @@ export default function StudentProfilePage() {
   const [documentUploadStatus, setDocumentUploadStatus] = useState('')
   const [documentUploadError, setDocumentUploadError] = useState('')
   const [isUploadingStudentDocument, setIsUploadingStudentDocument] = useState(false)
+  const [uploadedDocumentCards, setUploadedDocumentCards] = useState([])
   const [activeTab, setActiveTab] = useState('overview')
   const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [students, studentId])
   const visibleTabs = useMemo(() => {
@@ -1527,6 +1529,10 @@ export default function StudentProfilePage() {
   useEffect(() => {
     loadStudentDetail()
   }, [loadStudentDetail])
+
+  useEffect(() => {
+    setUploadedDocumentCards([])
+  }, [studentId])
 
   useEffect(() => {
     if (!studentId) return
@@ -1632,7 +1638,10 @@ export default function StudentProfilePage() {
   const testScoreRows = useMemo(() => buildTestScoreRows(student), [student])
   const transcriptCourseRows = useMemo(() => buildTranscriptCourseRows(student), [student])
   const documentCards = useMemo(() => {
-    const storedDocuments = (student?.documents || []).map((document) => ({
+    const storedDocuments = [
+      ...uploadedDocumentCards,
+      ...(student?.documents || []),
+    ].map((document) => ({
       ...document,
       id: document.documentId || document.documentUploadId || document.id,
       title: document.title || document.fileName || document.name || 'Student document',
@@ -1657,7 +1666,7 @@ export default function StudentProfilePage() {
       const id = document.id || document.documentId || document.documentUploadId
       return id && rows.findIndex((item) => (item.id || item.documentId || item.documentUploadId) === id) === index
     })
-  }, [student])
+  }, [student, uploadedDocumentCards])
   const equivalencyCreditSummary = useMemo(() => getEquivalencyCreditSummary(equivalencyRows), [equivalencyRows])
   const scholarshipOffers = useMemo(() => normalizeScholarshipOffers(student, financialAidSummary), [financialAidSummary, student])
   const scholarshipOfferSummary = useMemo(() => getScholarshipOfferSummary(scholarshipOffers), [scholarshipOffers])
@@ -1984,6 +1993,7 @@ export default function StudentProfilePage() {
     setIsUploadingStudentDocument(true)
 
     try {
+      const uploadResults = []
       for (const file of files) {
         const localType = classifyStudentDocument(file)
         setDocumentUploadStatus(`Asking governed AI to classify ${file.name}...`)
@@ -1994,14 +2004,22 @@ export default function StudentProfilePage() {
             classificationOptions: STUDENT_DOCUMENT_TYPES,
             session,
           })
-          if (STUDENT_DOCUMENT_TYPES.includes(governedClassification.documentType)) {
-            predictedType = governedClassification.documentType
+          const governedType = governedClassification.documentType
+          const confidence = Number(governedClassification.confidence ?? governedClassification.score ?? 0)
+          const hasStrongGovernmentIdSignal = localType === 'Government ID / residency proof' && strongGovernmentIdFilePattern.test(file.name)
+          const canUseGovernedType = STUDENT_DOCUMENT_TYPES.includes(governedType)
+            && (!hasStrongGovernmentIdSignal || governedType === localType || confidence >= 0.9)
+
+          if (canUseGovernedType) {
+            predictedType = governedType
             setDocumentUploadStatus(`Governed AI classified ${file.name} as ${predictedType}. Uploading to crtfy Documents...`)
+          } else if (hasStrongGovernmentIdSignal) {
+            setDocumentUploadStatus(`Governed AI classification was not confident enough to override ${localType} for ${file.name}. Uploading to crtfy Documents...`)
           }
         } catch (classificationError) {
           setDocumentUploadStatus(`Governed AI classification unavailable for ${file.name}; using local fallback ${localType}.`)
         }
-        await uploadStudentDocument({
+        const uploadResult = await uploadStudentDocument({
           studentId,
           file,
           documentType: predictedType,
@@ -2009,8 +2027,20 @@ export default function StudentProfilePage() {
             if (state?.message) setDocumentUploadStatus(state.message)
           },
         })
+        uploadResults.push(uploadResult)
+        if (uploadResult?.document) {
+          setUploadedDocumentCards((current) => [
+            uploadResult.document,
+            ...current.filter((item) => String(item.id || item.documentId || item.documentUploadId) !== String(uploadResult.document.id || uploadResult.document.documentId || uploadResult.document.documentUploadId)),
+          ])
+        }
       }
-      setDocumentUploadStatus(`${files.length} document${files.length === 1 ? '' : 's'} uploaded. Transcript files were sent for extraction.`)
+      const extractedCount = uploadResults.filter((result) => result?.extracted).length
+      const storedCount = uploadResults.length
+      const transcriptMessage = extractedCount
+        ? ` ${extractedCount} transcript file${extractedCount === 1 ? '' : 's'} sent for extraction.`
+        : ' Non-transcript documents were stored only.'
+      setDocumentUploadStatus(`${storedCount} document${storedCount === 1 ? '' : 's'} uploaded.${transcriptMessage}`)
     } catch (error) {
       setDocumentUploadError(error.message || 'Unable to upload student document.')
     } finally {

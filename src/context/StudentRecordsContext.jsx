@@ -392,11 +392,11 @@ function updateStudentProgramInCollection(currentStudents, studentId, program) {
 
 function addStudentDocumentInCollection(currentStudents, studentId, document) {
   return currentStudents.map((student) => {
-    if (student.id !== studentId) return student
+    if (String(student.id) !== String(studentId)) return student
     const documents = Array.isArray(student.documents) ? student.documents : []
     return {
       ...student,
-      documents: [document, ...documents.filter((item) => item.id !== document.id)],
+      documents: [document, ...documents.filter((item) => String(item.id || item.documentId || item.documentUploadId) !== String(document.id || document.documentId || document.documentUploadId))],
       lastActivity: 'Just now',
       updatedAt: new Date().toISOString(),
     }
