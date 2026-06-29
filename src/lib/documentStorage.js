@@ -1,3 +1,5 @@
+import { classifyDocumentDepartment } from './documentDepartments'
+
 const crtfyDocumentsBaseUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_URL || 'https://api.crtfydocuments.com').replace(/\/+$/, '')
 const crtfyDocumentsPublicUrl = (import.meta.env.VITE_DOCUMENT_STORAGE_PUBLIC_URL || crtfyDocumentsBaseUrl).replace(/\/+$/, '')
 const documentStorageTenantId = import.meta.env.VITE_DOCUMENT_STORAGE_TENANT_ID || ''
@@ -33,8 +35,8 @@ export function normalizeDocumentCategory(value, { isFinancialAid = false } = {}
   return category
 }
 
-export function getDocumentDepartment(documentType) {
-  return String(documentType || '').toLowerCase() === 'financial aid' ? 'Financial Aid' : 'General'
+export function getDocumentDepartment(documentType, options = {}) {
+  return classifyDocumentDepartment(documentType, options.file, options.departments)
 }
 
 export function getStoredDocumentId(payload) {
@@ -78,7 +80,10 @@ export async function uploadStoredDocument(file, options = {}) {
   const documentType = normalizeDocumentCategory(options.documentType || options.document_type, {
     isFinancialAid: options.isFinancialAid,
   })
-  const department = options.department || getDocumentDepartment(documentType)
+  const department = options.department || getDocumentDepartment(documentType, {
+    file,
+    departments: options.departments,
+  })
   const formData = new FormData()
 
   formData.append('file', file, file.name)

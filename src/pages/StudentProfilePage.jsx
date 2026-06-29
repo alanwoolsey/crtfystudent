@@ -2990,6 +2990,7 @@ export default function StudentProfilePage() {
                 </div>
                 <div className="detail-grid">
                   <div><span>Status</span><strong>{document.status || 'Stored'}</strong></div>
+                  <div><span>Department</span><strong>{document.department || document.documentStorageDepartment || 'General / Shared Services'}</strong></div>
                   <div><span>Storage</span><strong>{document.source || activeDocumentStorageProvider.name}</strong></div>
                   <div><span>Portal</span><strong>{document.portalVisible === false ? 'Hidden' : 'Visible'}</strong></div>
                   <div><span>Extraction</span><strong>{isTranscriptDocumentType(document.type) ? 'Transcript service' : 'Document AI pending'}</strong></div>

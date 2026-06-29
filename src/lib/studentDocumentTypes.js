@@ -14,6 +14,12 @@ export const STUDENT_DOCUMENT_TYPES = [
   'FAFSA/CSS/Profile status or document placeholder',
   'Immunization/final enrollment documents',
   'Generated decision letters',
+  'Financial Aid',
+  'Residency Appeal',
+  'FERPA',
+  'HR',
+  'Finance',
+  'Admissions',
 ]
 
 export function isTranscriptDocumentType(documentType) {
@@ -39,6 +45,12 @@ export function classifyStudentDocument(file) {
   if (/passport|driver|license|government.id|residency|resident|id.card/.test(haystack)) return 'Government ID / residency proof'
   if (/fee.waiver|waiver/.test(haystack)) return 'Fee waiver documentation'
   if (/fafsa|css|profile|financial.aid/.test(haystack)) return 'FAFSA/CSS/Profile status or document placeholder'
+  if (/aid.award|award.letter|financial.aid|verification.worksheet|student.aid/.test(haystack)) return 'Financial Aid'
+  if (/residency.appeal|residency|in.state|out.of.state|domicile/.test(haystack)) return 'Residency Appeal'
+  if (/ferpa|privacy.release|information.release|consent.release/.test(haystack)) return 'FERPA'
+  if (/\bhr\b|human.resources|employment|employee|i-9|w-4/.test(haystack)) return 'HR'
+  if (/finance|billing|invoice|payment|ledger|account.statement/.test(haystack)) return 'Finance'
+  if (/admissions|admission|applicant|application.packet/.test(haystack)) return 'Admissions'
   if (/immunization|vaccine|vaccination|enrollment|final/.test(haystack)) return 'Immunization/final enrollment documents'
   if (/decision.letter|admit.letter|acceptance|denial|waitlist/.test(haystack)) return 'Generated decision letters'
   return 'Application form'
