@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowLeft, CheckCircle2, CircleDot, Mail, MapPin, Phone, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, CircleDot, FileText, Mail, MapPin, Phone, Upload, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
 import TranscriptTimeline from '../components/TranscriptTimeline'
 import OperationalModeNotice from '../components/OperationalModeNotice'
@@ -13,6 +13,7 @@ import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl, normalizeDocumentStorageUrl } from '../lib/documentStorage'
+import { STUDENT_DOCUMENT_TYPES, classifyStudentDocument, isTranscriptDocumentType } from '../lib/studentDocumentTypes'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
 
@@ -1409,7 +1410,7 @@ function buildDerivedTimeline(student, checklistStats, readiness) {
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument } = useStudentRecords()
   const { currentUser, session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
@@ -1471,6 +1472,9 @@ export default function StudentProfilePage() {
   const [documentViewerUrl, setDocumentViewerUrl] = useState('')
   const [documentViewerError, setDocumentViewerError] = useState('')
   const [isLoadingDocumentViewer, setIsLoadingDocumentViewer] = useState(false)
+  const [documentUploadStatus, setDocumentUploadStatus] = useState('')
+  const [documentUploadError, setDocumentUploadError] = useState('')
+  const [isUploadingStudentDocument, setIsUploadingStudentDocument] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [students, studentId])
   const visibleTabs = useMemo(() => {
@@ -1562,7 +1566,17 @@ export default function StudentProfilePage() {
     loadReadiness()
   }, [fetchWithTenantAuth, session, studentId])
 
-  const student = studentDetail || summaryStudent
+  const student = useMemo(() => {
+    if (!studentDetail) return summaryStudent
+    const documents = [
+      ...(Array.isArray(studentDetail.documents) ? studentDetail.documents : []),
+      ...(Array.isArray(summaryStudent?.documents) ? summaryStudent.documents : []),
+    ].filter((document, index, rows) => {
+      const id = document?.documentId || document?.documentUploadId || document?.id
+      return rows.findIndex((item) => (item?.documentId || item?.documentUploadId || item?.id) === id) === index
+    })
+    return { ...summaryStudent, ...studentDetail, documents }
+  }, [studentDetail, summaryStudent])
   const checklistStats = getChecklistStats(student)
   const readiness = liveReadiness || getReadiness(student)
   const selectedCommunicationTemplate = useMemo(
@@ -1616,6 +1630,33 @@ export default function StudentProfilePage() {
   const subjectGpaRows = useMemo(() => buildSubjectGpaRows(student), [student])
   const testScoreRows = useMemo(() => buildTestScoreRows(student), [student])
   const transcriptCourseRows = useMemo(() => buildTranscriptCourseRows(student), [student])
+  const documentCards = useMemo(() => {
+    const storedDocuments = (student?.documents || []).map((document) => ({
+      ...document,
+      id: document.documentId || document.documentUploadId || document.id,
+      title: document.title || document.fileName || document.name || 'Student document',
+      type: document.documentType || document.documentStorageType || 'Application form',
+      status: document.status || 'Stored',
+      uploadedAt: document.uploadedAt || document.updatedAt || '',
+      source: document.provider || document.documentStorageProvider || activeDocumentStorageProvider.name,
+    }))
+    const transcriptDocuments = (student?.transcripts || []).map((transcript) => ({
+      ...transcript,
+      id: getTranscriptCrtfyDocumentsId(transcript) || getTranscriptDocumentUploadId(transcript) || transcript.id,
+      title: transcript.institution || transcript.source || transcript.fileName || 'Transcript received',
+      type: transcript.documentType || transcript.documentStorageType || transcript.type || 'Transcript',
+      status: transcript.status || 'Processed',
+      uploadedAt: transcript.uploadedAt || transcript.updatedAt || '',
+      source: transcript.source || 'Transcript extraction',
+      checklistImpact: 'Can satisfy transcript checklist requirements.',
+      workflow: 'Stored, extracted, and available for decision evidence.',
+      portalVisible: true,
+    }))
+    return [...storedDocuments, ...transcriptDocuments].filter((document, index, rows) => {
+      const id = document.id || document.documentId || document.documentUploadId
+      return id && rows.findIndex((item) => (item.id || item.documentId || item.documentUploadId) === id) === index
+    })
+  }, [student])
   const equivalencyCreditSummary = useMemo(() => getEquivalencyCreditSummary(equivalencyRows), [equivalencyRows])
   const scholarshipOffers = useMemo(() => normalizeScholarshipOffers(student, financialAidSummary), [financialAidSummary, student])
   const scholarshipOfferSummary = useMemo(() => getScholarshipOfferSummary(scholarshipOffers), [scholarshipOffers])
@@ -1929,6 +1970,36 @@ export default function StudentProfilePage() {
       setProgramError(error.message || 'Unable to update program.')
     } finally {
       setIsProgramSaving(false)
+    }
+  }
+
+  async function handleStudentDocumentUpload(event) {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+
+    setDocumentUploadError('')
+    setDocumentUploadStatus('')
+    setIsUploadingStudentDocument(true)
+
+    try {
+      for (const file of files) {
+        const predictedType = classifyStudentDocument(file)
+        setDocumentUploadStatus(`Classified ${file.name} as ${predictedType}. Uploading to crtfy Documents...`)
+        await uploadStudentDocument({
+          studentId,
+          file,
+          documentType: predictedType,
+          onStateChange: (state) => {
+            if (state?.message) setDocumentUploadStatus(state.message)
+          },
+        })
+      }
+      setDocumentUploadStatus(`${files.length} document${files.length === 1 ? '' : 's'} uploaded. Transcript files were sent for extraction.`)
+    } catch (error) {
+      setDocumentUploadError(error.message || 'Unable to upload student document.')
+    } finally {
+      setIsUploadingStudentDocument(false)
     }
   }
 
@@ -2890,12 +2961,56 @@ export default function StudentProfilePage() {
       ) : null}
 
       {activeTab === 'documents' ? (
-      <section className="dashboard-grid profile-grid">
+      <section className="documents-tab-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <div>
+              <h3>Student documents</h3>
+              <p>Checklist, workflow, communication, extraction, audit, and portal visibility start from the stored file.</p>
+            </div>
+            <label className="primary-button">
+              <Upload size={16} /> {isUploadingStudentDocument ? 'Uploading...' : 'Upload document'}
+              <input type="file" multiple hidden onChange={handleStudentDocumentUpload} disabled={isUploadingStudentDocument} />
+            </label>
+          </div>
+          {documentUploadStatus ? <p className="auth-success">{documentUploadStatus}</p> : null}
+          {documentUploadError ? <p className="auth-error">{documentUploadError}</p> : null}
+          <div className="tag-row document-type-row">
+            {STUDENT_DOCUMENT_TYPES.map((type) => <span key={type} className="tag">{type}</span>)}
+          </div>
+          <div className="student-document-grid">
+            {documentCards.map((document) => (
+              <article key={document.id} className="student-document-card">
+                <div className="student-document-card-top">
+                  <FileText size={20} />
+                  <div>
+                    <h4>{document.title}</h4>
+                    <p>{document.type}</p>
+                  </div>
+                </div>
+                <div className="detail-grid">
+                  <div><span>Status</span><strong>{document.status || 'Stored'}</strong></div>
+                  <div><span>Storage</span><strong>{document.source || activeDocumentStorageProvider.name}</strong></div>
+                  <div><span>Portal</span><strong>{document.portalVisible === false ? 'Hidden' : 'Visible'}</strong></div>
+                  <div><span>Extraction</span><strong>{isTranscriptDocumentType(document.type) ? 'Transcript service' : 'Document AI pending'}</strong></div>
+                </div>
+                <p className="muted-copy">{document.checklistImpact || 'Available for checklist and workflow review.'}</p>
+                <p className="muted-copy">{document.workflow || 'Stored in crtfy Documents with audit metadata.'}</p>
+                <div className="form-actions">
+                  <button type="button" className="secondary-button" onClick={() => setSelectedTranscript(document)}>Open document</button>
+                  <button type="button" className="secondary-button" disabled>Portal visibility</button>
+                </div>
+              </article>
+            ))}
+          </div>
+          {!documentCards.length ? <p className="muted-copy">No documents are stored for this student yet.</p> : null}
+        </article>
+
         <article className="panel">
           <div className="panel-header">
             <div>
               <h3>Transcript lineage</h3>
-              <p>One record, all document history, with evidence ready for review.</p>
+              <p>Transcript files are the only documents sent to the transcript extraction service.</p>
             </div>
           </div>
           <TranscriptTimeline transcripts={student.transcripts || []} onTranscriptSelect={setSelectedTranscript} />
@@ -3205,8 +3320,8 @@ export default function StudentProfilePage() {
           <div className="modal-panel transcript-course-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <div className="panel-header">
               <div>
-                <h3>{selectedTranscript.institution || selectedTranscript.source}</h3>
-                <p>{selectedTranscript.type} - {selectedTranscript.courses?.length || 0} courses</p>
+                <h3>{selectedTranscript.title || selectedTranscript.institution || selectedTranscript.source || 'Student document'}</h3>
+                <p>{selectedTranscript.type || selectedTranscript.documentType || 'Document'}{selectedTranscript.courses?.length ? ` - ${selectedTranscript.courses.length} courses` : ''}</p>
               </div>
               <button type="button" className="icon-button" onClick={() => setSelectedTranscript(null)} aria-label="Close transcript details">
                 <X size={18} />
@@ -3214,69 +3329,73 @@ export default function StudentProfilePage() {
             </div>
 
             <div className="course-modal-body">
-              {hasAnyPermission(['view_sensitive_docs']) && hasSensitivityTier('transcript_images') && selectedTranscript.courses?.length ? (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Subject</th>
-                        <th>Course ID</th>
-                        <th>Course title</th>
-                        <th>Course #</th>
-                        <th>Credits</th>
-                        <th>Grade</th>
-                        <th>Term</th>
-                        <th>Year</th>                        
-                        <th>Rigor</th>
-                        <th>Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedTranscript.courses.map((course, index) => (
-                        <tr key={`${selectedTranscript.id}-${getCourseId(course)}-${getCourseValue(course, ['term'], '')}-${getCourseValue(course, ['year'], '')}-${index}`}>
-                          <td>{getCourseSubject(course) || '-'}</td>
-                          <td><strong>{getCourseId(course) || '-'}</strong></td>
-                          <td>{getCourseTitle(course) || '-'}</td>
-                          <td>{getCourseNumber(course) || '-'}</td>
-                          <td>{formatCredits(getCourseCredits(course))}</td>
-                          <td>{course.grade || '-'}</td>
-                          <td>{getCourseValue(course, ['term'], '-')}</td>
-                          <td>{getCourseValue(course, ['year'], '-')}</td>                          
-                          <td>{getCourseValue(course, ['rigor'], '-') || '-'}</td>
-                          <td>{formatConfidence(getCourseConfidence(course))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {hasAnyPermission(['view_sensitive_docs']) && hasSensitivityTier('transcript_images') ? (
+                <>
+                  {selectedTranscript.courses?.length ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Subject</th>
+                            <th>Course ID</th>
+                            <th>Course title</th>
+                            <th>Course #</th>
+                            <th>Credits</th>
+                            <th>Grade</th>
+                            <th>Term</th>
+                            <th>Year</th>
+                            <th>Rigor</th>
+                            <th>Confidence</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedTranscript.courses.map((course, index) => (
+                            <tr key={`${selectedTranscript.id}-${getCourseId(course)}-${getCourseValue(course, ['term'], '')}-${getCourseValue(course, ['year'], '')}-${index}`}>
+                              <td>{getCourseSubject(course) || '-'}</td>
+                              <td><strong>{getCourseId(course) || '-'}</strong></td>
+                              <td>{getCourseTitle(course) || '-'}</td>
+                              <td>{getCourseNumber(course) || '-'}</td>
+                              <td>{formatCredits(getCourseCredits(course))}</td>
+                              <td>{course.grade || '-'}</td>
+                              <td>{getCourseValue(course, ['term'], '-')}</td>
+                              <td>{getCourseValue(course, ['year'], '-')}</td>
+                              <td>{getCourseValue(course, ['rigor'], '-') || '-'}</td>
+                              <td>{formatConfidence(getCourseConfidence(course))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
                   <div className="transcript-pdf-section">
                     <div className="panel-header">
                       <div>
-                        <h3>Transcript document</h3>
-                        <p>Original PDF shown below the extracted course rows when a viewable document URL is available.</p>
+                        <h3>Stored document</h3>
+                        <p>Original file shown when crtfy Documents returns viewable content for this tenant.</p>
                       </div>
                     </div>
                     {isLoadingDocumentViewer ? (
                       <div className="callout-card">
                         <h4>Loading document</h4>
-                        <p>Fetching the uploaded PDF for this tenant.</p>
+                        <p>Fetching the uploaded file for this tenant.</p>
                       </div>
                     ) : documentViewerUrl ? (
                       <iframe
                         className="transcript-pdf-viewer"
                         src={documentViewerUrl}
-                        title={`${selectedTranscript.institution || selectedTranscript.source || 'Transcript'} PDF`}
+                        title={`${selectedTranscript.title || selectedTranscript.institution || selectedTranscript.source || 'Document'} file`}
                       />
                     ) : (
                       <div className="callout-card">
-                        <h4>PDF not available in this payload</h4>
-                        <p>{documentViewerError || 'The parsed results include extracted course data, but no uploaded document content is available for this transcript.'}</p>
+                        <h4>Document preview not available</h4>
+                        <p>{documentViewerError || 'The stored file exists, but no viewable content is available in this payload.'}</p>
                         {getTranscriptDocumentUploadId(selectedTranscript) ? <p><strong>Document upload ID:</strong> {getTranscriptDocumentUploadId(selectedTranscript)}</p> : null}
                       </div>
                     )}
                   </div>
-                </div>
+                </>
               ) : (
-                <p className="muted-copy">Transcript detail is not available for your access level.</p>
+                <p className="muted-copy">Document detail is not available for your access level.</p>
               )}
             </div>
           </div>

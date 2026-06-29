@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useAuth } from './AuthContext'
 import { CHECKLIST_STATUSES, LEGACY_STAGE_LABELS, PIPELINE_STATUSES, normalizePipelineStatus } from '../lib/admissionsWorkflow'
 import { uploadStoredDocument } from '../lib/documentStorage'
+import { classifyStudentDocument, isTranscriptDocumentType } from '../lib/studentDocumentTypes'
 import { getChecklistErrorMessage, getChecklistItemStatusUrl, getChecklistUrl } from '../lib/workApi'
 
 const StudentRecordsContext = createContext(null)
@@ -105,6 +106,7 @@ function normalizeStudentsPayload(payload) {
     risk: normalizeStudentValue(student?.risk, 'Low'),
     stage: normalizePipelineStatus(student?.stage || student?.lifecycleStage || student?.lifecycle_stage),
     nextBestAction: normalizeStudentValue(student?.nextBestAction || student?.next_best_action || student?.suggestedAction?.label, ''),
+    documents: Array.isArray(student?.documents) ? student.documents : Array.isArray(student?.studentDocuments) ? student.studentDocuments : [],
   }))
 }
 
@@ -388,6 +390,19 @@ function updateStudentProgramInCollection(currentStudents, studentId, program) {
   ))
 }
 
+function addStudentDocumentInCollection(currentStudents, studentId, document) {
+  return currentStudents.map((student) => {
+    if (student.id !== studentId) return student
+    const documents = Array.isArray(student.documents) ? student.documents : []
+    return {
+      ...student,
+      documents: [document, ...documents.filter((item) => item.id !== document.id)],
+      lastActivity: 'Just now',
+      updatedAt: new Date().toISOString(),
+    }
+  })
+}
+
 function updateStudentWorkStateInCollection(currentStudents, studentId, patch) {
   return currentStudents.map((student) => (
     student.id === studentId
@@ -572,9 +587,13 @@ export function StudentRecordsProvider({ children }) {
     const onStateChange = options.onStateChange || (() => {})
     const lowerName = file.name.toLowerCase()
     const isZipUpload = lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+    const documentType = options.documentType || options.documentCategory || classifyStudentDocument(file)
 
     if (!session?.access_token || !session?.tenant_id) {
       throw new Error('You must be signed in to upload transcripts.')
+    }
+    if (!isZipUpload && !isTranscriptDocumentType(documentType)) {
+      throw new Error(`${file.name} was classified as ${documentType}. Use the student Documents tab to store non-transcript documents.`)
     }
 
     onStateChange({
@@ -584,20 +603,19 @@ export function StudentRecordsProvider({ children }) {
       error: '',
     })
 
-    const documentType = options.documentType || options.documentCategory || 'Transcript'
     const documentStorageTenantId = options.crtfyDocumentsTenantId || session.tenant_id
-    const storedDocument = await uploadStoredDocument(file, {
-      title: options.title || file.name,
-      documentType,
-      isFinancialAid: options.isFinancialAid,
-      personId: options.personId || options.crtfyDocumentsPersonId,
-      tags: options.tags,
-      notes: options.notes,
-      tenantId: documentStorageTenantId,
-      accessToken: session.access_token,
-      userEmail: session.email || session.username,
-      actor: session.username || session.email || 'crtfy-student',
-    })
+    const storedDocument = options.storedDocument || await uploadStoredDocument(file, {
+        title: options.title || file.name,
+        documentType,
+        isFinancialAid: options.isFinancialAid,
+        personId: options.personId || options.crtfyDocumentsPersonId,
+        tags: options.tags,
+        notes: options.notes,
+        tenantId: documentStorageTenantId,
+        accessToken: session.access_token,
+        userEmail: session.email || session.username,
+        actor: session.username || session.email || 'crtfy-student',
+      })
 
     onStateChange({
       state: 'uploading',
@@ -609,7 +627,7 @@ export function StudentRecordsProvider({ children }) {
 
     const formData = new FormData()
     formData.append('file', file, file.name)
-    formData.append('document_type', 'auto')
+    formData.append('document_type', documentType)
     formData.append('use_bedrock', 'true')
     formData.append('storage_provider', storedDocument.provider)
     formData.append('document_id', storedDocument.documentId)
@@ -917,6 +935,74 @@ export function StudentRecordsProvider({ children }) {
       isZipUpload: false,
     }
   }, [fetchWithTenantAuth, loadStudents, session])
+
+  const uploadStudentDocument = useCallback(async ({ studentId, file, documentType, onStateChange } = {}) => {
+    if (!studentId || !file) throw new Error('studentId and file are required.')
+    if (!session?.access_token || !session?.tenant_id) {
+      throw new Error('You must be signed in to upload student documents.')
+    }
+
+    const nextDocumentType = documentType || classifyStudentDocument(file)
+    const now = new Date().toISOString()
+    const notify = onStateChange || (() => {})
+    notify({ state: 'uploading', message: `Storing ${file.name} in crtfy Documents`, documentType: nextDocumentType })
+
+    const storedDocument = await uploadStoredDocument(file, {
+      title: file.name,
+      documentType: nextDocumentType,
+      personId: studentId,
+      tags: ['student-document', nextDocumentType],
+      notes: `Student document uploaded from Student 360 for ${studentId}.`,
+      tenantId: session.tenant_id,
+      accessToken: session.access_token,
+      userEmail: session.email || session.username,
+      actor: session.username || session.email || 'crtfy-student',
+    })
+
+    const documentRecord = {
+      id: storedDocument.documentId,
+      documentId: storedDocument.documentId,
+      documentUploadId: storedDocument.documentId,
+      provider: storedDocument.provider,
+      documentStorageProvider: storedDocument.provider,
+      documentType: nextDocumentType,
+      documentStorageType: nextDocumentType,
+      department: storedDocument.department,
+      documentStorageDepartment: storedDocument.department,
+      title: file.name,
+      fileName: file.name,
+      status: isTranscriptDocumentType(nextDocumentType) ? 'Stored; transcript extraction queued' : 'Stored',
+      confidence: 0.86,
+      contentUrl: storedDocument.contentUrl,
+      documentContentUrl: storedDocument.contentUrl,
+      uploadedAt: now,
+      updatedAt: now,
+      owner: session.email || session.username || 'Current user',
+      checklistImpact: isTranscriptDocumentType(nextDocumentType) ? 'Can satisfy transcript checklist requirements.' : 'Available for checklist and workflow review.',
+      workflow: 'Stored in crtfy Documents, visible on Student 360, audit-ready.',
+      portalVisible: true,
+      rawDocument: {
+        documentStorage: storedDocument,
+        crtfyDocumentId: storedDocument.documentId,
+      },
+    }
+
+    setStudents((current) => addStudentDocumentInCollection(current, studentId, documentRecord))
+
+    if (!isTranscriptDocumentType(nextDocumentType)) {
+      notify({ state: 'complete', message: `${nextDocumentType} stored in crtfy Documents`, documentId: storedDocument.documentId, documentType: nextDocumentType })
+      return { storedDocument, document: documentRecord, extracted: false }
+    }
+
+    notify({ state: 'processing', message: `${nextDocumentType} stored. Sending transcript to extraction.`, documentId: storedDocument.documentId, documentType: nextDocumentType })
+    const transcriptResult = await uploadTranscript(file, {
+      documentType: nextDocumentType,
+      personId: studentId,
+      storedDocument,
+      onStateChange: notify,
+    })
+    return { storedDocument, document: documentRecord, transcriptResult, extracted: true }
+  }, [session, uploadTranscript])
 
   const loadStudentChecklist = useCallback(async (studentId) => {
     if (!studentId || !session?.access_token || !session?.tenant_id) return []
@@ -1371,8 +1457,9 @@ export function StudentRecordsProvider({ children }) {
     createStudentHandoff,
     updateStudentMilestone,
     logRecruitmentEvent,
+    uploadStudentDocument,
     uploadTranscript,
-  }), [addStudentInteraction, createStudent, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadTranscript])
+  }), [addStudentInteraction, createStudent, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 
