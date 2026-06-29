@@ -13,6 +13,7 @@ import ReadinessChip from '../components/ReadinessChip'
 import SensitivityGuard from '../components/SensitivityGuard'
 import { getChecklistStats, getReadiness } from '../lib/studentWorkflow'
 import { activeDocumentStorageProvider, fetchStoredDocumentContent, fetchStoredDocumentContentUrl, normalizeDocumentStorageUrl } from '../lib/documentStorage'
+import { classifyDocumentWithGovernedAi } from '../lib/governedDocumentClassification'
 import { STUDENT_DOCUMENT_TYPES, classifyStudentDocument, isTranscriptDocumentType } from '../lib/studentDocumentTypes'
 import { getReadinessErrorMessage, getReadinessUrl } from '../lib/workApi'
 import { READINESS_STATES, normalizeReadinessState } from '../lib/admissionsWorkflow'
@@ -1984,8 +1985,22 @@ export default function StudentProfilePage() {
 
     try {
       for (const file of files) {
-        const predictedType = classifyStudentDocument(file)
-        setDocumentUploadStatus(`Classified ${file.name} as ${predictedType}. Uploading to crtfy Documents...`)
+        const localType = classifyStudentDocument(file)
+        setDocumentUploadStatus(`Asking governed AI to classify ${file.name}...`)
+        let predictedType = localType
+        try {
+          const governedClassification = await classifyDocumentWithGovernedAi({
+            file,
+            classificationOptions: STUDENT_DOCUMENT_TYPES,
+            session,
+          })
+          if (STUDENT_DOCUMENT_TYPES.includes(governedClassification.documentType)) {
+            predictedType = governedClassification.documentType
+            setDocumentUploadStatus(`Governed AI classified ${file.name} as ${predictedType}. Uploading to crtfy Documents...`)
+          }
+        } catch (classificationError) {
+          setDocumentUploadStatus(`Governed AI classification unavailable for ${file.name}; using local fallback ${localType}.`)
+        }
         await uploadStudentDocument({
           studentId,
           file,

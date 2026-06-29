@@ -42,7 +42,7 @@ export function classifyStudentDocument(file) {
   if (/counselor|school.report|secondary.school.report/.test(haystack)) return 'Counselor/school report'
   if (/act|sat|score.report|test.score/.test(haystack)) return 'ACT/SAT scores'
   if (/toefl|ielts|duolingo|english.proficiency|pte/.test(haystack)) return 'English proficiency scores'
-  if (/passport|driver|license|government.id|residency|resident|id.card/.test(haystack)) return 'Government ID / residency proof'
+  if (/(^|[^a-z])dl([^a-z]|$)|driver|drivers|driver.s|license|licence|\bcdl\b|commercial.driver|state.id|photo.id|passport|government.id|residency|resident|id.card/.test(haystack)) return 'Government ID / residency proof'
   if (/fee.waiver|waiver/.test(haystack)) return 'Fee waiver documentation'
   if (/fafsa|css|profile|financial.aid/.test(haystack)) return 'FAFSA/CSS/Profile status or document placeholder'
   if (/aid.award|award.letter|financial.aid|verification.worksheet|student.aid/.test(haystack)) return 'Financial Aid'
