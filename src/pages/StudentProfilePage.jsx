@@ -1705,11 +1705,50 @@ export default function StudentProfilePage() {
       workflow: 'Stored in crtfy Documents with audit metadata.',
       portalVisible: true,
     }))
-    return [...storedDocuments, ...transcriptDocuments].filter((document, index, rows) => {
+    const documentsById = new Map()
+    storedDocuments.forEach((document) => {
       const id = document.id || document.documentId || document.documentUploadId
-      return id && rows.findIndex((item) => (item.id || item.documentId || item.documentUploadId) === id) === index
+      if (id) documentsById.set(String(id), document)
     })
+    transcriptDocuments.forEach((document) => {
+      const id = document.id || document.documentId || document.documentUploadId
+      if (!id) return
+      const existing = documentsById.get(String(id))
+      documentsById.set(String(id), {
+        ...existing,
+        ...document,
+        title: existing?.title || document.title,
+        source: existing?.source || document.source,
+        status: existing?.status || document.status,
+        uploadedAt: existing?.uploadedAt || document.uploadedAt,
+        courses: document.courses || existing?.courses || [],
+      })
+    })
+    return Array.from(documentsById.values())
   }, [student, uploadedDocumentCards])
+  const selectedTranscriptDetails = useMemo(() => {
+    if (!selectedTranscript) return null
+    if (selectedTranscript.courses?.length) return selectedTranscript
+
+    const selectedId = String(selectedTranscript.id || selectedTranscript.documentId || selectedTranscript.documentUploadId || '')
+    const matchingTranscript = (student?.transcripts || []).find((transcript) => {
+      const transcriptIds = [
+        getTranscriptCrtfyDocumentsId(transcript),
+        getTranscriptDocumentUploadId(transcript),
+        transcript.id,
+        transcript.documentId,
+      ].filter(Boolean).map(String)
+      return selectedId && transcriptIds.includes(selectedId)
+    })
+
+    return matchingTranscript ? {
+      ...selectedTranscript,
+      ...matchingTranscript,
+      id: selectedTranscript.id || getTranscriptCrtfyDocumentsId(matchingTranscript) || getTranscriptDocumentUploadId(matchingTranscript) || matchingTranscript.id,
+      title: selectedTranscript.title || matchingTranscript.institution || matchingTranscript.source || 'Student document',
+      type: selectedTranscript.type || matchingTranscript.documentType || matchingTranscript.documentStorageType || matchingTranscript.type || 'Transcript',
+    } : selectedTranscript
+  }, [selectedTranscript, student])
   const equivalencyCreditSummary = useMemo(() => getEquivalencyCreditSummary(equivalencyRows), [equivalencyRows])
   const scholarshipOffers = useMemo(() => normalizeScholarshipOffers(student, financialAidSummary), [financialAidSummary, student])
   const scholarshipOfferSummary = useMemo(() => getScholarshipOfferSummary(scholarshipOffers), [scholarshipOffers])
@@ -3394,8 +3433,8 @@ export default function StudentProfilePage() {
           <div className="modal-panel transcript-course-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
             <div className="panel-header">
               <div>
-                <h3>{selectedTranscript.title || selectedTranscript.institution || selectedTranscript.source || 'Student document'}</h3>
-                <p>{selectedTranscript.type || selectedTranscript.documentType || 'Document'}{selectedTranscript.courses?.length ? ` - ${selectedTranscript.courses.length} courses` : ''}</p>
+                <h3>{selectedTranscriptDetails?.title || selectedTranscriptDetails?.institution || selectedTranscriptDetails?.source || 'Student document'}</h3>
+                <p>{selectedTranscriptDetails?.type || selectedTranscriptDetails?.documentType || 'Document'}{selectedTranscriptDetails?.courses?.length ? ` - ${selectedTranscriptDetails.courses.length} courses` : ''}</p>
               </div>
               <button type="button" className="icon-button" onClick={() => setSelectedTranscript(null)} aria-label="Close transcript details">
                 <X size={18} />
@@ -3405,7 +3444,7 @@ export default function StudentProfilePage() {
             <div className="course-modal-body">
               {hasAnyPermission(['view_sensitive_docs']) && hasSensitivityTier('transcript_images') ? (
                 <>
-                  {selectedTranscript.courses?.length ? (
+                  {selectedTranscriptDetails?.courses?.length ? (
                     <div className="table-wrap">
                       <table>
                         <thead>
@@ -3423,8 +3462,8 @@ export default function StudentProfilePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedTranscript.courses.map((course, index) => (
-                            <tr key={`${selectedTranscript.id}-${getCourseId(course)}-${getCourseValue(course, ['term'], '')}-${getCourseValue(course, ['year'], '')}-${index}`}>
+                          {selectedTranscriptDetails.courses.map((course, index) => (
+                            <tr key={`${selectedTranscriptDetails.id}-${getCourseId(course)}-${getCourseValue(course, ['term'], '')}-${getCourseValue(course, ['year'], '')}-${index}`}>
                               <td>{getCourseSubject(course) || '-'}</td>
                               <td><strong>{getCourseId(course) || '-'}</strong></td>
                               <td>{getCourseTitle(course) || '-'}</td>
@@ -3457,7 +3496,7 @@ export default function StudentProfilePage() {
                       <iframe
                         className="transcript-pdf-viewer"
                         src={documentViewerUrl}
-                        title={`${selectedTranscript.title || selectedTranscript.institution || selectedTranscript.source || 'Document'} file`}
+                        title={`${selectedTranscriptDetails?.title || selectedTranscriptDetails?.institution || selectedTranscriptDetails?.source || 'Document'} file`}
                       />
                     ) : (
                       <div className="callout-card">
