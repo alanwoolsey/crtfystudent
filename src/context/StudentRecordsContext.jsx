@@ -1241,8 +1241,12 @@ export function StudentRecordsProvider({ children }) {
     }
 
     const existingStudent = students.find((student) => String(student.id) === String(studentId))
+    const currentProgram = patch.program || existingStudent?.program || existingStudent?.programInterest || existingStudent?.degreeProgram || 'Program pending'
     const nextPatch = {
       ...patch,
+      program: currentProgram,
+      degreeProgram: currentProgram,
+      programInterest: currentProgram,
       smsOptIn: Boolean(patch.smsOptIn),
       textingOk: Boolean(patch.smsOptIn),
       textConsent: Boolean(patch.smsOptIn),
