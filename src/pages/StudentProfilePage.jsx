@@ -1455,7 +1455,7 @@ function buildDerivedTimeline(student, checklistStats, readiness) {
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument, getStoredStudentDocuments } = useStudentRecords()
   const { currentUser, session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
@@ -1560,22 +1560,33 @@ export default function StudentProfilePage() {
         throw new Error(payload?.detail || payload?.message || 'Unable to load student.')
       }
 
-      setStudentDetail(normalizeStudentDetailPayload(payload))
+      const normalizedDetail = normalizeStudentDetailPayload(payload)
+      const cachedDocuments = getStoredStudentDocuments?.(studentId) || []
+      setStudentDetail({
+        ...normalizedDetail,
+        documents: [
+          ...(Array.isArray(normalizedDetail.documents) ? normalizedDetail.documents : []),
+          ...cachedDocuments,
+        ].filter((document, index, rows) => {
+          const id = document?.documentId || document?.documentUploadId || document?.id
+          return id && rows.findIndex((item) => (item?.documentId || item?.documentUploadId || item?.id) === id) === index
+        }),
+      })
     } catch (error) {
       setDetailError(error.message || 'Unable to load student.')
       setStudentDetail(null)
     } finally {
       setIsLoadingDetail(false)
     }
-  }, [fetchWithTenantAuth, normalizeStudentDetailPayload, session, studentId])
+  }, [fetchWithTenantAuth, getStoredStudentDocuments, normalizeStudentDetailPayload, session, studentId])
 
   useEffect(() => {
     loadStudentDetail()
   }, [loadStudentDetail])
 
   useEffect(() => {
-    setUploadedDocumentCards([])
-  }, [studentId])
+    setUploadedDocumentCards(getStoredStudentDocuments?.(studentId) || [])
+  }, [getStoredStudentDocuments, studentId])
 
   useEffect(() => {
     if (!studentId) return

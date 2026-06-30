@@ -10,6 +10,7 @@ const apiBaseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').rep
 const transcriptUploadUrl = `${apiBaseUrl}/api/v1/transcripts/uploads`
 const studentsUrl = `${apiBaseUrl}/api/v1/students`
 const pollIntervalMs = 1500
+const cachedStudentDocumentsKey = 'crtfyStudent.cachedStudentDocuments.v1'
 
 function slugify(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '')
@@ -36,6 +37,37 @@ function firstPositiveNumber(...values) {
 
 function sleep(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function readCachedStudentDocuments() {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(cachedStudentDocumentsKey) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function getStudentDocumentCacheKey(tenantId, studentId) {
+  return `${tenantId || 'default'}:${studentId}`
+}
+
+function getCachedStudentDocuments(tenantId, studentId) {
+  const cache = readCachedStudentDocuments()
+  const rows = cache[getStudentDocumentCacheKey(tenantId, studentId)]
+  return Array.isArray(rows) ? rows : []
+}
+
+function cacheStudentDocument(tenantId, studentId, document) {
+  if (typeof window === 'undefined' || !studentId || !document) return
+  const cache = readCachedStudentDocuments()
+  const key = getStudentDocumentCacheKey(tenantId, studentId)
+  const current = Array.isArray(cache[key]) ? cache[key] : []
+  cache[key] = [
+    document,
+    ...current.filter((item) => String(item.id || item.documentId || item.documentUploadId) !== String(document.id || document.documentId || document.documentUploadId)),
+  ].slice(0, 80)
+  window.localStorage.setItem(cachedStudentDocumentsKey, JSON.stringify(cache))
 }
 
 async function parseApiPayload(response) {
@@ -403,6 +435,23 @@ function addStudentDocumentInCollection(currentStudents, studentId, document) {
   })
 }
 
+function mergeCachedDocumentsIntoStudent(student, tenantId) {
+  if (!student?.id) return student
+  const cachedDocuments = getCachedStudentDocuments(tenantId, student.id)
+  if (!cachedDocuments.length) return student
+  const documents = Array.isArray(student.documents) ? student.documents : []
+  const mergedDocuments = [...documents]
+  cachedDocuments.forEach((document) => {
+    const id = document.id || document.documentId || document.documentUploadId
+    if (!id || mergedDocuments.some((item) => String(item.id || item.documentId || item.documentUploadId) === String(id))) return
+    mergedDocuments.push(document)
+  })
+  return {
+    ...student,
+    documents: mergedDocuments,
+  }
+}
+
 function updateStudentWorkStateInCollection(currentStudents, studentId, patch) {
   return currentStudents.map((student) => (
     student.id === studentId
@@ -503,7 +552,7 @@ export function StudentRecordsProvider({ children }) {
 
       if (!response.ok) throw new Error(getStudentsErrorMessage(response, payload))
 
-      const nextStudents = normalizeStudentsPayload(payload)
+      const nextStudents = normalizeStudentsPayload(payload).map((student) => mergeCachedDocumentsIntoStudent(student, session.tenant_id))
       setStudents(nextStudents)
       return nextStudents
     } catch (error) {
@@ -989,6 +1038,7 @@ export function StudentRecordsProvider({ children }) {
     }
 
     setStudents((current) => addStudentDocumentInCollection(current, studentId, documentRecord))
+    cacheStudentDocument(session.tenant_id, studentId, documentRecord)
 
     if (!isTranscriptDocumentType(nextDocumentType)) {
       notify({ state: 'complete', message: `${nextDocumentType} stored in crtfy Documents`, documentId: storedDocument.documentId, documentType: nextDocumentType })
@@ -1452,6 +1502,10 @@ export function StudentRecordsProvider({ children }) {
     return addStudentInteraction({ studentId, interaction })
   }, [addStudentInteraction])
 
+  const getStoredStudentDocuments = useCallback((studentId) => (
+    getCachedStudentDocuments(session?.tenant_id, studentId)
+  ), [session?.tenant_id])
+
   const value = useMemo(() => ({
     students,
     isLoadingStudents,
@@ -1468,9 +1522,10 @@ export function StudentRecordsProvider({ children }) {
     createStudentHandoff,
     updateStudentMilestone,
     logRecruitmentEvent,
+    getStoredStudentDocuments,
     uploadStudentDocument,
     uploadTranscript,
-  }), [addStudentInteraction, createStudent, createStudentHandoff, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
+  }), [addStudentInteraction, createStudent, createStudentHandoff, getStoredStudentDocuments, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 
