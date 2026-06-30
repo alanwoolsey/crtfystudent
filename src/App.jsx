@@ -49,6 +49,8 @@ import AdminPage from './pages/AdminPage'
 import PlatformTenantsPage from './pages/PlatformTenantsPage'
 import UtilitiesPage from './pages/UtilitiesPage'
 import { useStudentRecords } from './context/StudentRecordsContext'
+import { classifyDocumentWithGovernedAi } from './lib/governedDocumentClassification'
+import { STUDENT_DOCUMENT_TYPES, classifyStudentDocument, isTranscriptDocumentType } from './lib/studentDocumentTypes'
 
 const idleUploadState = {
   state: 'idle',
@@ -167,6 +169,45 @@ function formatUploadTimestamp(value) {
   }).format(date)
 }
 
+function canTreatAsTranscriptCandidate(file) {
+  const name = String(file?.name || '').toLowerCase()
+  const type = String(file?.type || '').toLowerCase()
+  return type === 'application/pdf'
+    || name.endsWith('.pdf')
+    || type.startsWith('image/')
+    || /\.(png|jpe?g|tiff?|webp)$/i.test(name)
+}
+
+async function resolveTranscriptUploadType(file, session, onStatus) {
+  const lowerName = file.name.toLowerCase()
+  const isZipUpload = lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+  const localType = classifyStudentDocument(file)
+  if (isZipUpload || isTranscriptDocumentType(localType)) return isZipUpload ? 'High school transcript' : localType
+
+  try {
+    onStatus?.(`Checking whether ${file.name} is a transcript...`)
+    const governedClassification = await classifyDocumentWithGovernedAi({
+      file,
+      classificationOptions: STUDENT_DOCUMENT_TYPES,
+      session,
+    })
+    const governedType = governedClassification.documentType
+    const confidence = Number(governedClassification.confidence ?? governedClassification.score ?? 0)
+    if (isTranscriptDocumentType(governedType)) return governedType
+    if (governedType && confidence >= 0.86) {
+      const error = new Error(`${file.name} looks like ${governedType}, not a transcript. Upload it from the student Documents tab.`)
+      error.isClassificationDecision = true
+      throw error
+    }
+  } catch (error) {
+    if (error.isClassificationDecision) throw error
+    if (!canTreatAsTranscriptCandidate(file)) throw error
+  }
+
+  if (canTreatAsTranscriptCandidate(file)) return 'High school transcript'
+  throw new Error(`${file.name} could not be identified as a transcript.`)
+}
+
 export default function App() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -283,7 +324,14 @@ export default function App() {
     setIsUploadModalOpen(true)
 
     try {
+      const documentType = await resolveTranscriptUploadType(file, session, (message) => {
+        setUploadState((current) => ({
+          ...current,
+          message,
+        }))
+      })
       const result = await uploadTranscript(file, {
+        documentType,
         onStateChange: (nextState) => {
           setUploadState((current) => ({
             ...current,

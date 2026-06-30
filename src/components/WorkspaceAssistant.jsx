@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, CheckCircle2, Maximize2, MessageCircle, Minimize2, Paperclip, Send, X } from 'lucide-react'
+import { Bot, CheckCircle2, Eraser, Maximize2, MessageCircle, Minimize2, Paperclip, Send, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useAuth } from '../context/AuthContext'
 
@@ -216,6 +216,11 @@ export default function WorkspaceAssistant({ currentUser }) {
     event.target.value = ''
   }
 
+  function clearDraft() {
+    setDraft('')
+    window.setTimeout(() => inputRef.current?.focus(), 0)
+  }
+
   return (
     <div ref={assistantRef} className={`workspace-assistant ${isOpen ? 'open' : ''} ${isExpanded ? 'expanded' : ''}`}>
       {isOpen ? (
@@ -296,6 +301,9 @@ export default function WorkspaceAssistant({ currentUser }) {
             <input ref={fileInputRef} type="file" className="file-input-hidden" onChange={handleAttachmentChange} />
             <button type="button" className="assistant-attach-button" onClick={() => fileInputRef.current?.click()} aria-label="Attach file" disabled={isSending}>
               <Paperclip size={18} />
+            </button>
+            <button type="button" className="assistant-clear-button" onClick={clearDraft} aria-label="Clear text" title="Clear text" disabled={!draft || isSending}>
+              <Eraser size={18} />
             </button>
             <button type="submit" className="assistant-send-button" disabled={!draft.trim() || isSending}>
               <Send size={18} />

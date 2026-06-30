@@ -3,7 +3,6 @@ import { Link, useParams } from 'react-router-dom'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { ArrowLeft, CheckCircle2, CircleDot, FileText, Mail, MapPin, Phone, Upload, X } from 'lucide-react'
 import SectionHeader from '../components/SectionHeader'
-import TranscriptTimeline from '../components/TranscriptTimeline'
 import OperationalModeNotice from '../components/OperationalModeNotice'
 import { useStudentRecords } from '../context/StudentRecordsContext'
 import { useAuth } from '../context/AuthContext'
@@ -1657,9 +1656,9 @@ export default function StudentProfilePage() {
       type: transcript.documentType || transcript.documentStorageType || transcript.type || 'Transcript',
       status: transcript.status || 'Processed',
       uploadedAt: transcript.uploadedAt || transcript.updatedAt || '',
-      source: transcript.source || 'Transcript extraction',
+      source: transcript.source || activeDocumentStorageProvider.name,
       checklistImpact: 'Can satisfy transcript checklist requirements.',
-      workflow: 'Stored, extracted, and available for decision evidence.',
+      workflow: 'Stored in crtfy Documents with audit metadata.',
       portalVisible: true,
     }))
     return [...storedDocuments, ...transcriptDocuments].filter((document, index, rows) => {
@@ -2035,12 +2034,8 @@ export default function StudentProfilePage() {
           ])
         }
       }
-      const extractedCount = uploadResults.filter((result) => result?.extracted).length
       const storedCount = uploadResults.length
-      const transcriptMessage = extractedCount
-        ? ` ${extractedCount} transcript file${extractedCount === 1 ? '' : 's'} sent for extraction.`
-        : ' Non-transcript documents were stored only.'
-      setDocumentUploadStatus(`${storedCount} document${storedCount === 1 ? '' : 's'} uploaded.${transcriptMessage}`)
+      setDocumentUploadStatus(`${storedCount} document${storedCount === 1 ? '' : 's'} uploaded to crtfy Documents.`)
     } catch (error) {
       setDocumentUploadError(error.message || 'Unable to upload student document.')
     } finally {
@@ -3020,9 +3015,6 @@ export default function StudentProfilePage() {
           </div>
           {documentUploadStatus ? <p className="auth-success">{documentUploadStatus}</p> : null}
           {documentUploadError ? <p className="auth-error">{documentUploadError}</p> : null}
-          <div className="tag-row document-type-row">
-            {STUDENT_DOCUMENT_TYPES.map((type) => <span key={type} className="tag">{type}</span>)}
-          </div>
           <div className="student-document-grid">
             {documentCards.map((document) => (
               <article key={document.id} className="student-document-card">
@@ -3038,7 +3030,6 @@ export default function StudentProfilePage() {
                   <div><span>Department</span><strong>{document.department || document.documentStorageDepartment || 'General / Shared Services'}</strong></div>
                   <div><span>Storage</span><strong>{document.source || activeDocumentStorageProvider.name}</strong></div>
                   <div><span>Portal</span><strong>{document.portalVisible === false ? 'Hidden' : 'Visible'}</strong></div>
-                  <div><span>Extraction</span><strong>{isTranscriptDocumentType(document.type) ? 'Transcript service' : 'Document AI pending'}</strong></div>
                 </div>
                 <p className="muted-copy">{document.checklistImpact || 'Available for checklist and workflow review.'}</p>
                 <p className="muted-copy">{document.workflow || 'Stored in crtfy Documents with audit metadata.'}</p>
@@ -3050,16 +3041,6 @@ export default function StudentProfilePage() {
             ))}
           </div>
           {!documentCards.length ? <p className="muted-copy">No documents are stored for this student yet.</p> : null}
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <div>
-              <h3>Transcript lineage</h3>
-              <p>Transcript files are the only documents sent to the transcript extraction service.</p>
-            </div>
-          </div>
-          <TranscriptTimeline transcripts={student.transcripts || []} onTranscriptSelect={setSelectedTranscript} />
         </article>
       </section>
       ) : null}

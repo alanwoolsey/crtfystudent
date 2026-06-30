@@ -971,7 +971,7 @@ export function StudentRecordsProvider({ children }) {
       documentStorageDepartment: storedDocument.department,
       title: file.name,
       fileName: file.name,
-      status: isTranscriptDocumentType(nextDocumentType) ? 'Stored; transcript extraction queued' : 'Stored',
+      status: 'Stored',
       confidence: 0.86,
       contentUrl: storedDocument.contentUrl,
       documentContentUrl: storedDocument.contentUrl,
@@ -994,12 +994,15 @@ export function StudentRecordsProvider({ children }) {
       return { storedDocument, document: documentRecord, extracted: false }
     }
 
-    notify({ state: 'processing', message: `${nextDocumentType} stored. Sending transcript to extraction.`, documentId: storedDocument.documentId, documentType: nextDocumentType })
+    notify({ state: 'processing', message: `${nextDocumentType} stored in crtfy Documents`, documentId: storedDocument.documentId, documentType: nextDocumentType })
     const transcriptResult = await uploadTranscript(file, {
       documentType: nextDocumentType,
       personId: studentId,
       storedDocument,
-      onStateChange: notify,
+      onStateChange: (state = {}) => notify({
+        ...state,
+        message: `${nextDocumentType} stored in crtfy Documents`,
+      }),
     })
     return { storedDocument, document: documentRecord, transcriptResult, extracted: true }
   }, [session, uploadTranscript])
