@@ -301,7 +301,13 @@ function isCollegeTranscript(transcript) {
 }
 
 function buildTranscriptCourseRows(student) {
-  return (student?.transcripts || []).filter(isCollegeTranscript).flatMap((transcript) => (
+  return (student?.transcripts || []).filter((transcript) => isCollegeTranscript(transcript) || (transcript?.courses?.length && !/\b(high school|secondary|ged|hs)\b/i.test([
+    transcript?.type,
+    transcript?.documentType,
+    transcript?.document_type,
+    transcript?.source,
+    transcript?.institution,
+  ].filter(Boolean).join(' ')))).flatMap((transcript) => (
     (transcript.courses || []).map((course, index) => ({
       id: `${transcript.id || 'transcript'}-${getCourseId(course) || getCourseTitle(course) || index}`,
       transcriptId: transcript.id || '',
@@ -316,6 +322,44 @@ function buildTranscriptCourseRows(student) {
       countsAs: course.countsAs || course.counts_as || '',
     }))
   ))
+}
+
+function mergeExtractedTranscriptIntoStudent(student, uploadResult) {
+  const mapped = uploadResult?.mapped || uploadResult?.transcriptResult?.mapped
+  const transcript = mapped?.transcript
+  if (!student || !transcript) return student
+
+  const transcriptId = transcript.id || transcript.transcriptId || transcript.documentId || transcript.documentUploadId
+  const existingTranscripts = Array.isArray(student.transcripts) ? student.transcripts : []
+  const transcripts = [
+    transcript,
+    ...existingTranscripts.filter((item) => {
+      const itemId = item.id || item.transcriptId || item.documentId || item.documentUploadId
+      return String(itemId) !== String(transcriptId)
+    }),
+  ]
+  const documents = Array.isArray(student.documents) ? student.documents : []
+  const document = uploadResult?.document
+  const nextDocuments = document
+    ? [
+        document,
+        ...documents.filter((item) => String(item.id || item.documentId || item.documentUploadId) !== String(document.id || document.documentId || document.documentUploadId)),
+      ]
+    : documents
+
+  return {
+    ...student,
+    ...(mapped.studentPatch || {}),
+    id: student.id,
+    name: student.name || mapped.studentPatch?.name,
+    email: student.email || mapped.studentPatch?.email,
+    phone: student.phone || mapped.studentPatch?.phone,
+    program: student.program || mapped.studentPatch?.program,
+    documents: nextDocuments,
+    transcripts,
+    transcriptsCount: transcripts.length,
+    lastActivity: 'Just now',
+  }
 }
 
 function parseEquivalencyJson(value) {
@@ -2032,6 +2076,9 @@ export default function StudentProfilePage() {
             uploadResult.document,
             ...current.filter((item) => String(item.id || item.documentId || item.documentUploadId) !== String(uploadResult.document.id || uploadResult.document.documentId || uploadResult.document.documentUploadId)),
           ])
+        }
+        if (uploadResult?.mapped || uploadResult?.transcriptResult?.mapped) {
+          setStudentDetail((current) => mergeExtractedTranscriptIntoStudent(current || summaryStudent, uploadResult))
         }
       }
       const storedCount = uploadResults.length

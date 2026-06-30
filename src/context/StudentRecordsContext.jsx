@@ -926,6 +926,7 @@ export function StudentRecordsProvider({ children }) {
     setStudents((current) => mergeStudentRecord(current, mapped))
 
     return {
+      mapped,
       parsed,
       studentId: mapped.studentId,
       transcriptId,
@@ -1004,7 +1005,14 @@ export function StudentRecordsProvider({ children }) {
         message: `${nextDocumentType} stored in crtfy Documents`,
       }),
     })
-    return { storedDocument, document: documentRecord, transcriptResult, extracted: true }
+    return {
+      storedDocument,
+      document: documentRecord,
+      transcriptResult,
+      mapped: transcriptResult?.mapped || null,
+      parsed: transcriptResult?.parsed || null,
+      extracted: true,
+    }
   }, [session, uploadTranscript])
 
   const loadStudentChecklist = useCallback(async (studentId) => {
