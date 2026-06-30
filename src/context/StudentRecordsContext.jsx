@@ -1606,6 +1606,61 @@ export function StudentRecordsProvider({ children }) {
     }
   }, [fetchWithTenantAuth, session, students])
 
+  const sendStudentCommunication = useCallback(async ({ studentId, communication }) => {
+    if (!studentId || !communication || typeof communication !== 'object') {
+      throw new Error('studentId and communication are required.')
+    }
+    if (!session?.access_token || !session?.tenant_id) {
+      throw new Error('Sign in is required before sending outreach.')
+    }
+
+    const existingStudent = students.find((student) => student.id === studentId)
+    const occurredAt = communication.occurredAt || new Date().toISOString()
+    const channelLabel = String(communication.channel || 'communication').replace(/_/g, ' ')
+    const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}/communications/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: communication.provider || (communication.channel === 'text' ? 'twilio' : ''),
+        ...communication,
+        occurredAt,
+      }),
+    })
+    const payload = await parseApiPayload(response)
+
+    if (response.status === 404 || response.status === 405) {
+      throw new Error('Twilio text sending is not configured on the backend yet.')
+    }
+
+    if (!response.ok) {
+      throw new Error(getStudentsErrorMessage(response, payload))
+    }
+
+    const sentCommunication = payload?.communication || payload?.message || payload
+    const normalizedCommunication = {
+      id: sentCommunication?.id || sentCommunication?.messageId || sentCommunication?.providerMessageId || `communication-${Date.now()}`,
+      type: 'communication',
+      title: communication.title || `${channelLabel} outreach`,
+      outcome: sentCommunication?.status || communication.status || 'sent',
+      description: communication.message || communication.note || '',
+      note: communication.message || communication.note || '',
+      ...communication,
+      ...(sentCommunication && typeof sentCommunication === 'object' ? sentCommunication : {}),
+      occurredAt: sentCommunication?.occurredAt || occurredAt,
+      source: communication.source || 'student_360_outreach',
+      provider: communication.provider || (communication.channel === 'text' ? 'twilio' : sentCommunication?.provider),
+      status: sentCommunication?.status || 'sent',
+    }
+
+    if (existingStudent) {
+      setStudents((current) => addStudentInteractionInCollection(current, studentId, normalizedCommunication))
+    }
+
+    return normalizedCommunication
+  }, [fetchWithTenantAuth, session, students])
+
   const logRecruitmentEvent = useCallback(async ({ studentId, event }) => {
     if (!studentId || !event || typeof event !== 'object') {
       throw new Error('studentId and event are required.')
@@ -1645,13 +1700,14 @@ export function StudentRecordsProvider({ children }) {
     updateStudentWorkState,
     addStudentInteraction,
     logStudentCommunication,
+    sendStudentCommunication,
     createStudentHandoff,
     updateStudentMilestone,
     logRecruitmentEvent,
     getStoredStudentDocuments,
     uploadStudentDocument,
     uploadTranscript,
-  }), [addStudentInteraction, createStudent, createStudentHandoff, getStoredStudentDocuments, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentDemographics, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
+  }), [addStudentInteraction, createStudent, createStudentHandoff, getStoredStudentDocuments, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, sendStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentDemographics, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

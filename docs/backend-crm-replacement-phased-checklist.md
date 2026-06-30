@@ -794,6 +794,14 @@ POST /api/v1/students/{studentId}/communications/send
 POST /api/v1/communication/provider-callbacks/{provider}
 ```
 
+Twilio SMS contract for `POST /api/v1/students/{studentId}/communications/send`:
+
+- Accept frontend payloads with `channel: "text"`, `provider: "twilio"`, `to` or `recipientPhone`, `message`, `templateKey`, `templateLabel`, `subject`, `nextFollowUpAt`, `actor`, and `source`.
+- Validate the student has a phone number and the tenant is allowed to text the student.
+- Send through Twilio server-side only. Required backend environment/config: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and either `TWILIO_MESSAGING_SERVICE_SID` or `TWILIO_FROM_NUMBER`.
+- Persist the communication log with `status`, `provider: "twilio"`, `providerMessageId` or `messageSid`, `to`, `message`, `channel`, `occurredAt`, and delivery/error detail.
+- Return `{ communication: { ... } }` so Student 360 can add the sent text to communication history and timeline.
+
 ### Communication Log Fields
 
 - [ ] Channel.

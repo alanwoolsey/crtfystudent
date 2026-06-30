@@ -1478,7 +1478,7 @@ function buildDerivedTimeline(student, checklistStats, readiness) {
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, updateStudentDemographics, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument, getStoredStudentDocuments } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, updateStudentDemographics, addStudentInteraction, logStudentCommunication, sendStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument, getStoredStudentDocuments } = useStudentRecords()
   const { currentUser, session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
@@ -2271,6 +2271,10 @@ export default function StudentProfilePage() {
       setCommunicationError('Enter a message before logging outreach.')
       return
     }
+    if (communicationChannel === 'text' && !student?.phone) {
+      setCommunicationError('Add a student phone number before sending a text.')
+      return
+    }
 
     setIsLoggingCommunication(true)
 
@@ -2280,12 +2284,15 @@ export default function StudentProfilePage() {
       const actor = currentUser?.displayName || currentUser?.email || session?.username || 'Admissions'
       const communication = {
         channel: communicationChannel,
+        provider: communicationChannel === 'text' ? 'twilio' : '',
         templateKey: communicationTemplateKey,
         templateLabel,
         subject: communicationSubject.trim(),
         message,
         note: message,
-        status: 'logged',
+        status: communicationChannel === 'text' ? 'queued' : 'logged',
+        to: communicationChannel === 'text' ? student.phone : '',
+        recipientPhone: communicationChannel === 'text' ? student.phone : '',
         title: `${channelLabel} outreach`,
         nextAction: `Follow up on ${templateLabel.toLowerCase()} outreach`,
         nextFollowUpAt: communicationNextFollowUpAt ? new Date(communicationNextFollowUpAt).toISOString() : '',
@@ -2293,7 +2300,9 @@ export default function StudentProfilePage() {
         actor,
         source: 'student_360_outreach',
       }
-      const savedCommunication = await logStudentCommunication({ studentId, communication })
+      const savedCommunication = communicationChannel === 'text'
+        ? await sendStudentCommunication({ studentId, communication })
+        : await logStudentCommunication({ studentId, communication })
       const timelineEvent = {
         id: savedCommunication.id || `communication-${Date.now()}`,
         type: 'communication',
@@ -2302,14 +2311,14 @@ export default function StudentProfilePage() {
         occurredAt: savedCommunication.occurredAt || communication.occurredAt,
         actor: savedCommunication.actor || actor,
         source: savedCommunication.source || 'student_360_outreach',
-        status: templateLabel,
+        status: communicationChannel === 'text' ? (savedCommunication.status || 'sent') : templateLabel,
       }
 
       setTimelineEvents((current) => [timelineEvent, ...current])
       setCommunicationHistory((current) => [savedCommunication, ...current])
       setTimelineMode((current) => current === 'live' ? 'live' : 'derived')
       setCommunicationNextFollowUpAt('')
-      setCommunicationSuccess('Outreach logged to the timeline.')
+      setCommunicationSuccess(communicationChannel === 'text' ? `Text sent to ${student.phone}.` : 'Outreach logged to the timeline.')
     } catch (error) {
       setCommunicationError(error.message || 'Unable to log outreach.')
     } finally {
@@ -3044,7 +3053,7 @@ export default function StudentProfilePage() {
             <div className="panel-header">
               <div>
                 <h3>Outreach</h3>
-                <p>Template, personalize, and log counselor follow-up.</p>
+                <p>{communicationChannel === 'text' ? `Send a Twilio text to ${student.phone || 'a student phone number'}.` : 'Template, personalize, and log counselor follow-up.'}</p>
               </div>
               <span className="badge neutral-badge">{programName}</span>
             </div>
@@ -3082,8 +3091,8 @@ export default function StudentProfilePage() {
               {communicationError ? <p className="auth-error">{communicationError}</p> : null}
               {communicationSuccess ? <p className="auth-success">{communicationSuccess}</p> : null}
               <div className="password-actions">
-                <button type="submit" className="primary-button" disabled={isLoggingCommunication}>
-                  {isLoggingCommunication ? 'Logging...' : 'Log outreach'}
+                <button type="submit" className="primary-button" disabled={isLoggingCommunication || (communicationChannel === 'text' && !student.phone)}>
+                  {isLoggingCommunication ? (communicationChannel === 'text' ? 'Sending...' : 'Logging...') : (communicationChannel === 'text' ? 'Send text' : 'Log outreach')}
                 </button>
               </div>
             </form>
@@ -3111,6 +3120,8 @@ export default function StudentProfilePage() {
                     <span>{formatTimelineTime(item.occurredAt)}</span>
                     {item.actor ? <span>{item.actor}</span> : null}
                     {item.templateLabel ? <span>{item.templateLabel}</span> : null}
+                    {item.provider ? <span>{item.provider}</span> : null}
+                    {item.providerMessageId || item.messageSid ? <span>{item.providerMessageId || item.messageSid}</span> : null}
                     {item.nextFollowUpAt ? <span>Follow-up {formatTimelineTime(item.nextFollowUpAt)}</span> : null}
                   </div>
                 </div>
