@@ -111,6 +111,16 @@ function normalizeStudentValue(value, fallback = '') {
   return fallback
 }
 
+function normalizeStudentBoolean(value, fallback = false) {
+  if (value === true || value === false) return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (['true', 'yes', 'y', '1', 'opted_in', 'opted-in'].includes(normalized)) return true
+    if (['false', 'no', 'n', '0', 'opted_out', 'opted-out'].includes(normalized)) return false
+  }
+  return fallback
+}
+
 function normalizeStudentsPayload(payload) {
   const items = Array.isArray(payload)
     ? payload
@@ -123,8 +133,21 @@ function normalizeStudentsPayload(payload) {
   return items.map((student) => ({
     ...student,
     id: student?.id || student?.studentId,
+    name: normalizeStudentValue(student?.name || student?.fullName || student?.displayName, ''),
+    preferredName: normalizeStudentValue(student?.preferredName || student?.preferred_name || student?.nickname, ''),
     email: normalizeStudentValue(student?.email, ''),
     phone: normalizeStudentValue(student?.phone, ''),
+    smsOptIn: normalizeStudentBoolean(student?.smsOptIn ?? student?.sms_opt_in ?? student?.textingOk ?? student?.texting_ok ?? student?.textConsent ?? student?.text_consent, false),
+    addressLine1: normalizeStudentValue(student?.addressLine1 || student?.address_line1 || student?.address?.line1 || student?.address?.street, ''),
+    addressLine2: normalizeStudentValue(student?.addressLine2 || student?.address_line2 || student?.address?.line2, ''),
+    city: normalizeStudentValue(student?.city || student?.address?.city, ''),
+    state: normalizeStudentValue(student?.state || student?.address?.state || student?.address?.region, ''),
+    postalCode: normalizeStudentValue(student?.postalCode || student?.postal_code || student?.zip || student?.address?.postalCode || student?.address?.postal_code, ''),
+    parentName: normalizeStudentValue(student?.parentName || student?.parent_name || student?.guardianName || student?.guardian_name || student?.parentGuardian?.name, ''),
+    parentRelationship: normalizeStudentValue(student?.parentRelationship || student?.parent_relationship || student?.guardianRelationship || student?.guardian_relationship || student?.parentGuardian?.relationship, ''),
+    parentEmail: normalizeStudentValue(student?.parentEmail || student?.parent_email || student?.guardianEmail || student?.guardian_email || student?.parentGuardian?.email, ''),
+    parentPhone: normalizeStudentValue(student?.parentPhone || student?.parent_phone || student?.guardianPhone || student?.guardian_phone || student?.parentGuardian?.phone, ''),
+    notes: normalizeStudentValue(student?.notes || student?.internalNotes || student?.internal_notes, ''),
     program: normalizeStudentValue(student?.program, 'Program pending'),
     programInterest: normalizeStudentValue(student?.programInterest || student?.program_interest, ''),
     termInterest: normalizeStudentValue(student?.termInterest || student?.term_interest, ''),
@@ -417,6 +440,34 @@ function updateStudentProgramInCollection(currentStudents, studentId, program) {
           program,
           degreeProgram: program,
           lastActivity: 'Just now',
+        }
+      : student
+  ))
+}
+
+function updateStudentDemographicsInCollection(currentStudents, studentId, patch) {
+  return currentStudents.map((student) => (
+    String(student.id) === String(studentId)
+      ? {
+          ...student,
+          ...patch,
+          address: {
+            ...(student.address || {}),
+            line1: patch.addressLine1 ?? student.address?.line1,
+            line2: patch.addressLine2 ?? student.address?.line2,
+            city: patch.city ?? student.address?.city,
+            state: patch.state ?? student.address?.state,
+            postalCode: patch.postalCode ?? student.address?.postalCode,
+          },
+          parentGuardian: {
+            ...(student.parentGuardian || {}),
+            name: patch.parentName ?? student.parentGuardian?.name,
+            relationship: patch.parentRelationship ?? student.parentGuardian?.relationship,
+            email: patch.parentEmail ?? student.parentGuardian?.email,
+            phone: patch.parentPhone ?? student.parentGuardian?.phone,
+          },
+          lastActivity: 'Just now',
+          updatedAt: new Date().toISOString(),
         }
       : student
   ))
@@ -1184,6 +1235,76 @@ export function StudentRecordsProvider({ children }) {
     }
   }, [fetchWithTenantAuth, session, students])
 
+  const updateStudentDemographics = useCallback(async ({ studentId, patch }) => {
+    if (!studentId || !patch || typeof patch !== 'object') {
+      throw new Error('studentId and patch are required.')
+    }
+
+    const existingStudent = students.find((student) => String(student.id) === String(studentId))
+    const nextPatch = {
+      ...patch,
+      smsOptIn: Boolean(patch.smsOptIn),
+      textingOk: Boolean(patch.smsOptIn),
+      textConsent: Boolean(patch.smsOptIn),
+      address: {
+        line1: patch.addressLine1 || '',
+        line2: patch.addressLine2 || '',
+        city: patch.city || '',
+        state: patch.state || '',
+        postalCode: patch.postalCode || '',
+      },
+      parentGuardian: {
+        name: patch.parentName || '',
+        relationship: patch.parentRelationship || '',
+        email: patch.parentEmail || '',
+        phone: patch.parentPhone || '',
+      },
+    }
+
+    if (existingStudent) {
+      setStudents((current) => updateStudentDemographicsInCollection(current, studentId, nextPatch))
+    }
+
+    if (!session?.access_token || !session?.tenant_id) {
+      return { ...(existingStudent || { id: studentId }), ...nextPatch }
+    }
+
+    try {
+      const response = await fetchWithTenantAuth(`${studentsUrl}/${encodeURIComponent(studentId)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(nextPatch),
+      })
+      const payload = await parseApiPayload(response)
+
+      if (response.status === 404 || response.status === 405) {
+        return { ...(existingStudent || { id: studentId }), ...nextPatch }
+      }
+
+      if (!response.ok) {
+        throw new Error(getStudentsErrorMessage(response, payload))
+      }
+
+      const updatedStudent = {
+        ...(normalizeStudentDetailPayload(payload) || existingStudent || { id: studentId }),
+        ...nextPatch,
+      }
+
+      setStudents((current) => current.some((student) => String(student.id) === String(studentId))
+        ? current.map((student) => String(student.id) === String(studentId) ? { ...student, ...updatedStudent } : student)
+        : current)
+
+      return updatedStudent
+    } catch (error) {
+      if (existingStudent) {
+        setStudents((current) => current.map((student) => String(student.id) === String(studentId) ? existingStudent : student))
+      }
+      throw error
+    }
+  }, [fetchWithTenantAuth, session, students])
+
   const updateStudentWorkState = useCallback(async ({ studentId, patch }) => {
     if (!studentId || !patch || typeof patch !== 'object') {
       throw new Error('studentId and patch are required.')
@@ -1516,6 +1637,7 @@ export function StudentRecordsProvider({ children }) {
     loadStudentChecklist,
     updateChecklistItemStatus,
     updateStudentProgram,
+    updateStudentDemographics,
     updateStudentWorkState,
     addStudentInteraction,
     logStudentCommunication,
@@ -1525,7 +1647,7 @@ export function StudentRecordsProvider({ children }) {
     getStoredStudentDocuments,
     uploadStudentDocument,
     uploadTranscript,
-  }), [addStudentInteraction, createStudent, createStudentHandoff, getStoredStudentDocuments, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
+  }), [addStudentInteraction, createStudent, createStudentHandoff, getStoredStudentDocuments, isLoadingStudents, loadStudentChecklist, loadStudents, logRecruitmentEvent, logStudentCommunication, students, studentsError, updateChecklistItemStatus, updateStudentDemographics, updateStudentMilestone, updateStudentProgram, updateStudentWorkState, uploadStudentDocument, uploadTranscript])
   return <StudentRecordsContext.Provider value={value}>{children}</StudentRecordsContext.Provider>
 }
 

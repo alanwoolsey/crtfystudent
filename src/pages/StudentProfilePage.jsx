@@ -362,6 +362,29 @@ function mergeExtractedTranscriptIntoStudent(student, uploadResult) {
   }
 }
 
+function buildStudentDemographicForm(student = {}) {
+  return {
+    name: student.name || '',
+    preferredName: student.preferredName || '',
+    email: student.email || '',
+    phone: student.phone || '',
+    smsOptIn: Boolean(student.smsOptIn || student.textingOk || student.textConsent),
+    addressLine1: student.addressLine1 || student.address?.line1 || student.address?.street || '',
+    addressLine2: student.addressLine2 || student.address?.line2 || '',
+    city: student.city || student.address?.city || '',
+    state: student.state || student.address?.state || '',
+    postalCode: student.postalCode || student.zip || student.address?.postalCode || '',
+    parentName: student.parentName || student.parentGuardian?.name || student.guardianName || '',
+    parentRelationship: student.parentRelationship || student.parentGuardian?.relationship || student.guardianRelationship || '',
+    parentEmail: student.parentEmail || student.parentGuardian?.email || student.guardianEmail || '',
+    parentPhone: student.parentPhone || student.parentGuardian?.phone || student.guardianPhone || '',
+    advisor: student.advisor || '',
+    population: student.population || '',
+    source: student.source || '',
+    notes: student.notes || '',
+  }
+}
+
 function parseEquivalencyJson(value) {
   if (!value) return null
   if (typeof value === 'object') return value
@@ -1455,7 +1478,7 @@ function buildDerivedTimeline(student, checklistStats, readiness) {
 
 export default function StudentProfilePage() {
   const { studentId } = useParams()
-  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument, getStoredStudentDocuments } = useStudentRecords()
+  const { students, isLoadingStudents, studentsError, loadStudentChecklist, normalizeStudentDetailPayload, updateChecklistItemStatus, updateStudentProgram, updateStudentDemographics, addStudentInteraction, logStudentCommunication, createStudentHandoff, updateStudentMilestone, logRecruitmentEvent, uploadStudentDocument, getStoredStudentDocuments } = useStudentRecords()
   const { currentUser, session, fetchWithTenantAuth, hasAnyPermission, hasSensitivityTier } = useAuth()
   const [selectedTranscript, setSelectedTranscript] = useState(null)
   const [studentDetail, setStudentDetail] = useState(null)
@@ -1521,6 +1544,11 @@ export default function StudentProfilePage() {
   const [documentUploadError, setDocumentUploadError] = useState('')
   const [isUploadingStudentDocument, setIsUploadingStudentDocument] = useState(false)
   const [uploadedDocumentCards, setUploadedDocumentCards] = useState([])
+  const [isStudentUpdateOpen, setIsStudentUpdateOpen] = useState(false)
+  const [studentDemographicForm, setStudentDemographicForm] = useState(() => buildStudentDemographicForm())
+  const [studentUpdateError, setStudentUpdateError] = useState('')
+  const [studentUpdateSuccess, setStudentUpdateSuccess] = useState('')
+  const [isStudentUpdateSaving, setIsStudentUpdateSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const summaryStudent = useMemo(() => students.find((item) => item.id === studentId) || null, [students, studentId])
   const visibleTabs = useMemo(() => {
@@ -2076,6 +2104,46 @@ export default function StudentProfilePage() {
     }
   }
 
+  function openStudentUpdateModal() {
+    setStudentDemographicForm(buildStudentDemographicForm(student))
+    setStudentUpdateError('')
+    setStudentUpdateSuccess('')
+    setIsStudentUpdateOpen(true)
+  }
+
+  function updateStudentDemographicField(field, value) {
+    setStudentDemographicForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  async function handleStudentDemographicSubmit(event) {
+    event.preventDefault()
+    setStudentUpdateError('')
+    setStudentUpdateSuccess('')
+    setIsStudentUpdateSaving(true)
+
+    try {
+      const patch = {
+        ...studentDemographicForm,
+        smsOptIn: Boolean(studentDemographicForm.smsOptIn),
+      }
+      const updatedStudent = await updateStudentDemographics({ studentId, patch })
+      setStudentDetail((current) => ({
+        ...(current || student || { id: studentId }),
+        ...updatedStudent,
+        ...patch,
+      }))
+      setStudentUpdateSuccess('Student updated.')
+      setIsStudentUpdateOpen(false)
+    } catch (error) {
+      setStudentUpdateError(error.message || 'Unable to update student.')
+    } finally {
+      setIsStudentUpdateSaving(false)
+    }
+  }
+
   async function handleStudentDocumentUpload(event) {
     const files = Array.from(event.target.files || [])
     event.target.value = ''
@@ -2453,16 +2521,22 @@ export default function StudentProfilePage() {
               <h2>{student.preferredName || student.name}</h2>
               <p className="muted-copy">{student.summary}</p>
             </div>
-            <div className="pill-row compact">
-              <div className={`badge risk-${String(student.risk || 'low').toLowerCase()}`}>{student.stage}</div>
-              <ReadinessChip readiness={readiness} />
+            <div className="profile-header-actions">
+              <div className="pill-row compact">
+                <div className={`badge risk-${String(student.risk || 'low').toLowerCase()}`}>{student.stage}</div>
+                <ReadinessChip readiness={readiness} />
+              </div>
+              <button type="button" className="secondary-button" onClick={openStudentUpdateModal}>Update student</button>
             </div>
           </div>
 
           <div className="detail-grid">
             <span><Mail size={16} /> {student.email || 'No email on file'}</span>
             <span><Phone size={16} /> {student.phone || 'No phone on file'}</span>
-            <span><MapPin size={16} /> {student.city || 'Location pending'}</span>
+            <span><MapPin size={16} /> {[student.addressLine1 || student.address?.line1, student.city, student.state, student.postalCode].filter(Boolean).join(', ') || 'Location pending'}</span>
+            <span>Texting {student.smsOptIn ? 'OK' : 'Not approved'}</span>
+            <span>Parent/guardian {student.parentName || student.parentGuardian?.name || 'Not set'}</span>
+            <span>Parent phone {student.parentPhone || student.parentGuardian?.phone || 'Not set'}</span>
             <label className="profile-program-field">
               <span>Program</span>
               <select value={getProgramDisplay(student)} onChange={handleProgramChange} disabled={isProgramSaving}>
@@ -2481,6 +2555,7 @@ export default function StudentProfilePage() {
           </div>
           {programError ? <p className="auth-error">{programError}</p> : null}
           {programSuccess ? <p className="auth-success">{programSuccess}</p> : null}
+          {studentUpdateSuccess ? <p className="auth-success">{studentUpdateSuccess}</p> : null}
 
           <div className="metric-cluster profile-metrics">
             <div><span>Fit score</span><strong>{hasSensitivityTier('academic_record') ? formatPercentScore(student.fitScore) : '-'}</strong></div>
@@ -3522,6 +3597,72 @@ export default function StudentProfilePage() {
                 <p className="muted-copy">Document detail is not available for your access level.</p>
               )}
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isStudentUpdateOpen ? (
+        <div className="modal-scrim" onClick={() => setIsStudentUpdateOpen(false)} role="presentation">
+          <div className="modal-panel student-update-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="panel-header">
+              <div>
+                <h3>Update student</h3>
+                <p>Edit contact, address, parent/guardian, and assignment details.</p>
+              </div>
+              <button type="button" className="icon-button" onClick={() => setIsStudentUpdateOpen(false)} aria-label="Close student update">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form className="student-update-form" onSubmit={handleStudentDemographicSubmit}>
+              <div className="student-update-section">
+                <h4>Student</h4>
+                <div className="student-update-grid">
+                  <label className="auth-field"><span>Full name</span><input value={studentDemographicForm.name} onChange={(event) => updateStudentDemographicField('name', event.target.value)} /></label>
+                  <label className="auth-field"><span>Preferred name</span><input value={studentDemographicForm.preferredName} onChange={(event) => updateStudentDemographicField('preferredName', event.target.value)} /></label>
+                  <label className="auth-field"><span>Email</span><input type="email" value={studentDemographicForm.email} onChange={(event) => updateStudentDemographicField('email', event.target.value)} /></label>
+                  <label className="auth-field"><span>Phone</span><input value={studentDemographicForm.phone} onChange={(event) => updateStudentDemographicField('phone', event.target.value)} /></label>
+                  <label className="student-update-checkbox"><input type="checkbox" checked={studentDemographicForm.smsOptIn} onChange={(event) => updateStudentDemographicField('smsOptIn', event.target.checked)} /><span>Texting is OK</span></label>
+                </div>
+              </div>
+
+              <div className="student-update-section">
+                <h4>Address</h4>
+                <div className="student-update-grid">
+                  <label className="auth-field span-2"><span>Address line 1</span><input value={studentDemographicForm.addressLine1} onChange={(event) => updateStudentDemographicField('addressLine1', event.target.value)} /></label>
+                  <label className="auth-field span-2"><span>Address line 2</span><input value={studentDemographicForm.addressLine2} onChange={(event) => updateStudentDemographicField('addressLine2', event.target.value)} /></label>
+                  <label className="auth-field"><span>City</span><input value={studentDemographicForm.city} onChange={(event) => updateStudentDemographicField('city', event.target.value)} /></label>
+                  <label className="auth-field"><span>State</span><input value={studentDemographicForm.state} onChange={(event) => updateStudentDemographicField('state', event.target.value)} /></label>
+                  <label className="auth-field"><span>ZIP / postal code</span><input value={studentDemographicForm.postalCode} onChange={(event) => updateStudentDemographicField('postalCode', event.target.value)} /></label>
+                </div>
+              </div>
+
+              <div className="student-update-section">
+                <h4>Parent or guardian</h4>
+                <div className="student-update-grid">
+                  <label className="auth-field"><span>Name</span><input value={studentDemographicForm.parentName} onChange={(event) => updateStudentDemographicField('parentName', event.target.value)} /></label>
+                  <label className="auth-field"><span>Relationship</span><input value={studentDemographicForm.parentRelationship} onChange={(event) => updateStudentDemographicField('parentRelationship', event.target.value)} /></label>
+                  <label className="auth-field"><span>Email</span><input type="email" value={studentDemographicForm.parentEmail} onChange={(event) => updateStudentDemographicField('parentEmail', event.target.value)} /></label>
+                  <label className="auth-field"><span>Phone</span><input value={studentDemographicForm.parentPhone} onChange={(event) => updateStudentDemographicField('parentPhone', event.target.value)} /></label>
+                </div>
+              </div>
+
+              <div className="student-update-section">
+                <h4>Admissions details</h4>
+                <div className="student-update-grid">
+                  <label className="auth-field"><span>Advisor</span><input value={studentDemographicForm.advisor} onChange={(event) => updateStudentDemographicField('advisor', event.target.value)} /></label>
+                  <label className="auth-field"><span>Population</span><input value={studentDemographicForm.population} onChange={(event) => updateStudentDemographicField('population', event.target.value)} /></label>
+                  <label className="auth-field"><span>Source</span><input value={studentDemographicForm.source} onChange={(event) => updateStudentDemographicField('source', event.target.value)} /></label>
+                  <label className="auth-field span-2"><span>Notes</span><textarea value={studentDemographicForm.notes} onChange={(event) => updateStudentDemographicField('notes', event.target.value)} /></label>
+                </div>
+              </div>
+
+              {studentUpdateError ? <p className="auth-error">{studentUpdateError}</p> : null}
+              <div className="password-actions">
+                <button type="button" className="secondary-button" onClick={() => setIsStudentUpdateOpen(false)} disabled={isStudentUpdateSaving}>Cancel</button>
+                <button type="submit" className="primary-button" disabled={isStudentUpdateSaving}>{isStudentUpdateSaving ? 'Saving...' : 'Save student'}</button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

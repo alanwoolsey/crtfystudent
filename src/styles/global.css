@@ -1664,6 +1664,48 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   flex-direction: column;
   overflow: hidden;
 }
+.student-update-modal {
+  width: min(980px, 100%);
+}
+.student-update-form {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 18px;
+  padding-right: 4px;
+}
+.student-update-section {
+  display: grid;
+  gap: 12px;
+}
+.student-update-section h4 {
+  margin: 0;
+}
+.student-update-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.student-update-grid .span-2 {
+  grid-column: span 2;
+}
+.student-update-checkbox {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 700;
+}
+.student-update-checkbox input {
+  width: 18px;
+  height: 18px;
+}
+.profile-header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
 .create-student-modal {
   width: min(920px, 100%);
 }
@@ -2224,6 +2266,15 @@ th { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
   .section-header h1 { font-size: 1.6rem; }
   .stats-grid { grid-template-columns: 1fr; }
   .metric-cluster, .profile-metrics, .detail-grid, .preview-grid, .work-item-meta, .admin-user-meta, .admin-scope-grid, .admin-form-grid, .admin-check-grid, .student-info-grid, .create-student-grid { grid-template-columns: 1fr; }
+  .student-update-grid {
+    grid-template-columns: 1fr;
+  }
+  .student-update-grid .span-2 {
+    grid-column: auto;
+  }
+  .profile-header-actions {
+    justify-items: start;
+  }
   .today-summary-detail-grid { grid-template-columns: 1fr; }
   .card-footer-row, .panel-header, .student-card-top, .profile-top, .connector-top, .feed-top, .legend-row, .stack-row, .mini-table-row, .mini-table-head, .checklist-progress-top, .work-item-top, .work-item-heading, .work-item-actions, .admin-user-header, .admin-scope-reference-row, .documents-queue-top, .review-pane-header { flex-direction: column; }
   .auth-card { padding: 22px; }
